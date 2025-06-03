@@ -1,0 +1,523 @@
+from typing import List
+import logging
+import torch
+import pandas as pd
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
+import os
+
+# 熵值阈值字典（基于balance调优后的阈值）（tradition可以将阈值设为无穷大）
+# model_entropy_threshold_dic = {'deepseek-1.3b': 0.985009, 'deepseek-6.7b': 1.133763,
+#                                'stable-3b': 1.100464, 'codellama-7b': 1.935331,
+#                                'qwen3-0.6b': 1.321261, 'qwen3-1.7b': 0.615286,  'qwen3-4b': 0.713363, 'qwen3-8b': 0.705971,}
+
+model_entropy_threshold_dic = {'deepseek-1.3b': 1, 'deepseek-6.7b': 1,
+                               'stable-3b': 1, 'codellama-7b': 1,
+                               'qwen3-0.6b': 1, 'qwen3-1.7b': 1,  'qwen3-4b': 1, 'qwen3-8b': 1,}
+
+# Tradition版本
+# model_entropy_threshold_dic = {'deepseek-1.3b': 8888888880.985009, 'deepseek-6.7b': 8888888881.133763, 'qwen-1.5b': 8888888881.234278, 'qwen-7b': 8888888881.160773,
+#                                'stable-3b': 8888888881.100464, 'codellama-7b': 8888888881.935331,
+#                                'qwen3-0.6b': 8888888881.321261, 'qwen3-1.7b': 8888888880.615286,  'qwen3-4b': 8888888880.713363, 'qwen3-8b': 8888888880.705971,}
+
+
+
+class Generator:
+    def __init__(
+            self,
+            model: PreTrainedModel,
+            tokenizer: PreTrainedTokenizerBase,
+            model_name: str,
+            beam_size: int = 3,
+            decoding_mode: str = 'Traditional',     # Traditional or AdaFixL or AdaDynL
+            entropy_threshold = 'Learned'           # 'Learned' or a number
+    ):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.beam_size = beam_size
+        self.tradition_times = 0
+        self.lookahead_times = 0
+        self.logging_gen: str = ''
+        self.lookahead_beam_size = 3
+        self.generation_counter = 0
+        self.model_name = model_name
+        self.decoding_mode = decoding_mode
+        
+        self.entropy_threshold = None
+        if isinstance(entropy_threshold, str) and entropy_threshold == 'Learned':
+            self.entropy_threshold = model_entropy_threshold_dic.get(self.model_name)
+        elif isinstance(entropy_threshold, (float, int)):
+            self.entropy_threshold = entropy_threshold
+        else:
+            raise ValueError(f"Unsupported entropy_threshold: expected 'Learned' or a number, got {entropy_threshold}")
+
+
+
+    def calculate_entropy(self, next_token_logits):
+        next_token_probs_exp = torch.nn.functional.softmax(next_token_logits, dim=-1)
+        log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
+        return -torch.sum(next_token_probs_exp * log_probs, dim=-1)
+
+    def select_top_beam_scores(self, beam_size, topk_scores, topk_indices):
+        
+        if self.decoding_mode == 'AdaDynL':
+            if isinstance(topk_scores, list):
+                topk_scores = torch.cat(topk_scores, dim=0)
+                topk_indices = torch.cat(topk_indices, dim=0)
+
+            total_candidates = topk_scores.size(0)
+
+            if total_candidates == beam_size:
+                selected_groups = torch.arange(beam_size, dtype=torch.long, device=topk_scores.device)
+                return topk_scores, topk_indices, selected_groups
+
+            elif total_candidates == beam_size * beam_size:
+                final_scores, flat_indices = torch.topk(topk_scores, beam_size)  # [beam_size]
+
+                selected_groups = flat_indices // beam_size
+                token_pos_in_group = flat_indices % beam_size
+
+                final_indices = []
+                for group, pos in zip(selected_groups, token_pos_in_group):
+                    index = group * beam_size + pos
+                    final_indices.append(topk_indices[index])
+                final_indices = torch.stack(final_indices)
+
+                return final_scores, final_indices, selected_groups
+
+            else:
+                raise ValueError(f"Unsupported topk_scores size: expected {beam_size} or {beam_size * beam_size}, got {total_candidates}")
+        
+        elif self.decoding_mode == 'AdaFixL':
+            total_candidates = topk_scores.size(0)
+            assert total_candidates % beam_size == 0, "topk_scores size must be divisible by beam_size"
+            
+            batch_size = total_candidates // beam_size
+
+            # reshape to [batch_size, beam_size]
+            topk_scores = topk_scores.view(batch_size, beam_size)
+            topk_indices = topk_indices.view(batch_size, beam_size)
+
+            final_scores, local_indices = torch.topk(topk_scores, beam_size, dim=-1)  # [batch_size, beam_size]
+
+            batch_indices = torch.arange(batch_size).unsqueeze(1).to(topk_indices.device)  # [batch_size, 1]
+            final_indices = topk_indices[batch_indices, local_indices]  # [batch_size, beam_size]
+
+            selected_groups = batch_indices.expand(-1, beam_size)
+
+            return final_scores, final_indices, selected_groups
+        
+        else:
+           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+
+    def scoring_function(self, next_token_logits, beam_scores, beam_size):
+
+        if self.decoding_mode == 'AdaDynL':
+            next_token_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1).squeeze(0)
+            topk_scores, topk_indices = torch.topk(next_token_probs, beam_size)
+            topk_scores += beam_scores.item()
+            return topk_scores, topk_indices
+        
+        elif self.decoding_mode == 'AdaFixL':
+            log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)  # [batch, vocab]
+            topk_scores, topk_indices = torch.topk(log_probs, beam_size, dim=-1)    # [batch, beam_size]
+
+            if beam_scores.dim() == 1:
+                beam_scores = beam_scores.unsqueeze(1).expand(-1, beam_size)
+
+            topk_scores = topk_scores + beam_scores
+
+            topk_scores = topk_scores.view(-1)
+            topk_indices = topk_indices.view(-1)
+
+            return topk_scores, topk_indices
+        
+        else:
+           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+    
+    def generate(
+            self,
+            prompt,
+            beam_size=1,
+            max_new_tokens=512,
+            lambda_value=1,
+            lookahead_length=5,
+            logging_detail = True,
+    ):
+        self.beam_size = beam_size
+
+        token_ids = self.tokenizer([prompt], add_special_tokens=True, padding=True, truncation=True,
+                                   return_tensors="pt").input_ids
+        token_ids = token_ids.to(self.model.device)
+        
+        decoded_prompt = self.tokenizer.decode(
+            self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device),
+            skip_special_tokens=True
+        )
+
+        token_ids = token_ids.repeat(beam_size, 1)  # [beam_size, seq_len]
+        attention_mask = torch.ones_like(token_ids).to(self.model.device)
+
+        beam_scores = torch.zeros(beam_size, dtype=torch.float).to(self.model.device)
+
+        is_finished = [False] * beam_size
+
+        beam_indices = torch.zeros(beam_size, dtype=torch.long, device=self.model.device)
+
+        with torch.no_grad():
+            for step in range(max_new_tokens):
+                if all(is_finished):
+                    break
+
+                self.logging_gen = ''
+                self.logging_gen += f'STEP:{step}\n\n'
+
+                outputs = self.model(input_ids=token_ids, attention_mask=attention_mask)
+                next_token_logits = outputs.logits[:, -1, :]  # [beam_size, vocab_size]
+
+                topk_k_scores = []
+                topk_k_indices = []
+
+                entropy = self.calculate_entropy(next_token_logits)
+                self.logging_gen += f"entropy:{entropy}\n"
+
+                for i in range(self.beam_size):
+                    if entropy[i] < self.entropy_threshold or is_finished[i]:
+                        self.logging_gen += f"scoring function: \n"
+                        curr_topk_scores, curr_topk_indices = self.scoring_function(next_token_logits[i],
+                                                                                    beam_scores[i],
+                                                                                    beam_size=beam_size)
+                        topk_k_scores.append(curr_topk_scores)
+                        topk_k_indices.append(curr_topk_indices)
+                        self.tradition_times += 1
+                    else:
+                        self.logging_gen += f"lookahead scoring function:  (lookahead_beam_size: {self.lookahead_beam_size})\n"
+                        curr_topk_scores, curr_topk_indices = self.lookahead_scoring_function(
+                            decoded_prompt,
+                            next_token_logits[i],
+                            token_ids[i],
+                            beam_scores[i],
+                            lookahead_length=lookahead_length,
+                            lambda_value=lambda_value,
+                        )
+                        topk_k_scores.append(curr_topk_scores)
+                        topk_k_indices.append(curr_topk_indices)
+                        self.lookahead_times += 1
+
+                if not topk_k_scores:
+                    break
+
+                if step == 0:
+                    topk_scores = topk_k_scores[0]
+                    topk_indices = topk_k_indices[0]
+                else:
+                    topk_scores, topk_indices, beam_indices = self.select_top_beam_scores(
+                        beam_size=beam_size,
+                        topk_scores=topk_k_scores,
+                        topk_indices=topk_k_indices
+                    )
+
+                self.logging_gen += f"\ntopk_scores:{topk_scores}\n"
+
+                token_indices = topk_indices % next_token_logits.shape[-1]
+
+                self.logging_gen += f"beam_indices:{beam_indices}\n\n"
+
+                token_ids = torch.cat([
+                    token_ids[beam_indices],
+                    token_indices.unsqueeze(-1)
+                ], dim=-1)
+                beam_scores = topk_scores
+
+                for j in range(beam_size):
+                    if token_indices[j] == self.tokenizer.eos_token_id:
+                        is_finished[j] = True
+                        continue
+
+                    prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device)
+                    decoded_prompt = self.tokenizer.decode(prompt_ids, skip_special_tokens=True)
+                    decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
+                    current_sequence = decoded_seq[len(decoded_prompt):]
+                    lines = current_sequence.split('\n')
+
+                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
+
+                    is_endswith_Human = lines and lines[-1].strip().endswith('Human')
+
+                    all_lines_valid = all(line.startswith((' ', '\t')) for line in lines if line.strip())
+
+                    is_finished[j] = not all_lines_valid or is_consecutive_empty or is_endswith_Human
+
+                attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
+
+                if logging_detail:
+                    decoded_sequences = [
+                        self.tokenizer.decode(seq, skip_special_tokens=True)
+                        for seq in token_ids
+                    ]
+
+                    gen_list = []
+                    for gen in decoded_sequences:
+                        gen_list.append(gen)
+
+                    for count_gen in range(beam_size):
+                        self.logging_gen += f'----------candidate:{count_gen}----------\n' + gen_list[count_gen][
+                                                                                            len(prompt):] + '\n\n'
+
+                    logging.info(self.logging_gen)
+
+                torch.cuda.empty_cache()
+
+        decoded_sequences = [
+            self.tokenizer.decode(seq, skip_special_tokens=True)
+            for seq in token_ids
+        ]
+        
+        if logging_detail:
+            logging.info(f"Total tradition_times:{self.tradition_times}\n Total lookahead_times:{self.lookahead_times}\n")
+
+        torch.cuda.empty_cache()
+
+        return [gen[len(prompt):] for gen in decoded_sequences]
+
+    def lookahead_scoring_function(self, decoded_prompt, next_token_logits, token_ids, beam_scores,
+                                lookahead_length, lambda_value):
+        lookahead_beam_size = self.lookahead_beam_size
+        beam_size = self.beam_size
+
+        history_topk_score = beam_scores
+
+        topk_scores, topk_indices = self.scoring_function(
+            next_token_logits, beam_scores, beam_size=lookahead_beam_size)
+
+        current_topk_scores = topk_scores - history_topk_score
+        token_indices = topk_indices % next_token_logits.shape[-1]
+
+        token_ids = token_ids.repeat(lookahead_beam_size, 1)
+        token_ids = torch.cat([token_ids, token_indices.unsqueeze(-1)], dim=-1)
+
+        if self.decoding_mode == 'AdaFixL':
+            lookahead_scores, actual_lengths = self.get_lookahead_score_fixL(
+                token_ids=token_ids,
+                lookahead_length=lookahead_length,
+                decoded_prompt=decoded_prompt
+            )
+        elif self.decoding_mode == 'AdaDynL':
+            lookahead_scores, actual_lengths = self.get_lookahead_score_DynL(
+                token_ids=token_ids,
+                lookahead_length=lookahead_length,
+                decoded_prompt=decoded_prompt
+            )
+        else:
+           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+
+        total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
+
+        topk_scores, topk_indices_temp = torch.topk(total_scores, beam_size)
+        topk_indices = topk_indices[topk_indices_temp]
+
+        return topk_scores, topk_indices
+
+    def get_lookahead_score_fixL(self, token_ids, lookahead_length, decoded_prompt):
+        '''
+        AdaFixL的打分函数
+        '''
+        batch_size = token_ids.shape[0]
+        beam_size = self.beam_size
+
+        device = self.model.device
+
+        token_ids = token_ids.repeat_interleave(beam_size, dim=0)
+        attention_mask = torch.ones_like(token_ids).to(device)
+
+        lookahead_scores = torch.zeros(token_ids.size(0), dtype=torch.float).to(device)
+        is_finished = torch.zeros(token_ids.size(0), dtype=torch.bool).to(device)
+        actual_lookahead_length = torch.zeros(token_ids.size(0), dtype=torch.long).to(device)
+
+        with torch.no_grad():
+            for _ in range(lookahead_length):
+                if is_finished.all():
+                    break
+
+                outputs = self.model(input_ids=token_ids, attention_mask=attention_mask)
+                next_token_logits = outputs.logits[:, -1, :]
+
+                topk_scores, topk_indices = self.scoring_function(next_token_logits, lookahead_scores, beam_size=beam_size)
+
+                selected_scores, selected_indices, beam_idx = self.select_top_beam_scores(
+                    beam_size=beam_size,
+                    topk_scores=topk_scores,
+                    topk_indices=topk_indices
+                )
+
+                lookahead_scores = selected_scores
+                actual_lookahead_length += (~is_finished).long()
+                next_tokens = selected_indices % next_token_logits.shape[-1]
+
+                token_ids = torch.cat([
+                    token_ids[beam_idx],
+                    next_tokens.unsqueeze(-1)
+                ], dim=-1)
+                
+                if token_ids.ndim == 1:
+                    token_ids = token_ids.unsqueeze(0) 
+                else:
+                    token_ids = token_ids.view(-1, token_ids.shape[-1])
+
+                decoded_seqs = self.tokenizer.batch_decode(token_ids.tolist(), skip_special_tokens=True)
+
+                for i in range(token_ids.size(0)):
+                    if is_finished[i]:
+                        continue
+                    current_seq = decoded_seqs[i][len(decoded_prompt):]
+                    lines = current_seq.split('\n')
+                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
+                    all_lines_valid = all(not line or line.startswith((' ', '\t')) for line in lines)
+                    is_finished[i] = is_consecutive_empty or not all_lines_valid
+
+                attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(device)
+
+        lookahead_scores = lookahead_scores.view(batch_size, beam_size)
+        actual_lookahead_length = actual_lookahead_length.view(batch_size, beam_size)
+
+        max_scores, _ = lookahead_scores.max(dim=1)
+        max_lengths, _ = actual_lookahead_length.max(dim=1)
+
+        return max_scores, max_lengths
+
+    def get_lookahead_score_DynL(self, token_ids, lookahead_length, prompt):
+        '''
+        AdaDynL的lookahead打分函数
+        '''
+        beam_size = self.beam_size
+        actual_lookahead_length = 0
+
+        encoded_prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device)
+        decoded_prompt = self.tokenizer.decode(encoded_prompt_ids, skip_special_tokens=True)
+
+        token_ids = token_ids.repeat(beam_size, 1)  # [beam_size, seq_len]
+        attention_mask = torch.ones_like(token_ids).to(self.model.device)
+
+        lookahead_scores = torch.zeros(beam_size, dtype=torch.float).to(self.model.device)
+        beam_indices = torch.zeros(beam_size, dtype=torch.long, device=token_ids.device)
+
+        is_finished = [False] * beam_size
+
+        with torch.no_grad():
+            for _i in range(lookahead_length):
+                if all(is_finished):
+                    break
+
+                outputs = self.model(input_ids=token_ids, attention_mask=attention_mask)
+                next_token_logits = outputs.logits[:, -1, :]  # [beam_size, vocab_size]
+
+                topk_k_scores = []
+                topk_k_indices = []
+
+                for i in range(self.beam_size):
+                    curr_topk_scores, curr_topk_indices = self.scoring_function(
+                        next_token_logits[i:i + 1],
+                        lookahead_scores[i:i + 1],
+                        beam_size=beam_size
+                    )
+                    topk_k_scores.append(curr_topk_scores)
+                    topk_k_indices.append(curr_topk_indices)
+
+                if not topk_k_scores:
+                    break
+
+                topk_scores, topk_indices, beam_indices = self.select_top_beam_scores(
+                    beam_size=beam_size,
+                    topk_scores=topk_k_scores,
+                    topk_indices=topk_k_indices
+                )
+
+                actual_lookahead_length += 1
+                token_indices = topk_indices % next_token_logits.shape[-1]
+
+                beam_indices = beam_indices.to(token_ids.device)
+                token_ids = torch.cat([token_ids[beam_indices], token_indices.unsqueeze(-1)], dim=-1)
+                lookahead_scores = topk_scores
+
+                for j in range(beam_size):
+                    if token_indices[j] == self.tokenizer.eos_token_id:
+                        is_finished[j] = True
+                        continue
+
+                    decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
+                    current_sequence = decoded_seq[len(decoded_prompt):]
+                    lines = current_sequence.split('\n')
+
+                    is_consecutive_empty = (
+                        len(lines) >= 4 and
+                        all(line.strip() == '' for line in lines[-4:])
+                    )
+
+                    all_lines_valid = all(
+                        not line or line.startswith((' ', '\t'))
+                        for line in lines
+                    )
+                    
+                    ends_with_newline = current_sequence.endswith('\n')
+
+                    is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
+
+                attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
+                
+        self.logging_gen += f"actual_lookahead_length:{actual_lookahead_length}\n"
+
+        return lookahead_scores.max().item(), actual_lookahead_length
+
+    def generate_base_on_ground_truth(
+            self,
+            prompt,
+            ground_truth,
+            filename,
+    ):
+        """
+        根据给定 prompt 和 ground_truth，通过模型对已有序列进行一步一步的预测，
+        保存结果到 CSV 文件，包含 GenerationID，支持追加写入
+        """
+        generation_id = self.generation_counter
+        self.generation_counter += 1
+
+        device = next(self.model.parameters()).device
+        prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+        gt_ids = self.tokenizer(ground_truth, return_tensors="pt").input_ids[0].to(device)
+        current_sequence = prompt_ids
+
+        log_data = []
+
+        for i, gt_token in enumerate(gt_ids):
+            with torch.no_grad():
+                outputs = self.model(current_sequence)
+                logits = outputs.logits
+                next_logits = logits[0, -1, :]
+            topk_values, topk_indices = torch.topk(next_logits, k=50)
+            entropy = self.calculate_entropy(next_logits)
+            sorted_logits, sorted_indices = torch.sort(next_logits, descending=True)
+            rank_tensor = (sorted_indices == gt_token).nonzero()
+            rank = rank_tensor.item() + 1 if rank_tensor.numel() > 0 else -1
+
+            log_data.append({
+                "GenerationID": generation_id,
+                "Iteration": i,
+                "Entropy": float(entropy),
+                "GroundTruthToken": gt_token.item(),
+                "Rank": rank,
+                "Top50_TokenIDs": topk_indices.tolist(),
+                "Top50_TokenLogits": topk_values.tolist()
+            })
+
+            gt_token_id = gt_token.unsqueeze(0).unsqueeze(0).to(device)
+            current_sequence = torch.cat([current_sequence, gt_token_id], dim=1)
+
+            torch.cuda.empty_cache()
+
+        new_df = pd.DataFrame(log_data)
+
+        if os.path.exists(filename):
+            old_df = pd.read_parquet(filename, engine="pyarrow")
+            combined_df = pd.concat([old_df, new_df], ignore_index=True)
+            combined_df.to_parquet(filename, engine="pyarrow", index=False)
+        else:
+            new_df.to_parquet(filename, engine="pyarrow", index=False)
