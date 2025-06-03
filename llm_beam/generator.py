@@ -5,21 +5,9 @@ import pandas as pd
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 import os
 
-# 熵值阈值字典（基于balance调优后的阈值）（tradition可以将阈值设为无穷大）
-# model_entropy_threshold_dic = {'deepseek-1.3b': 0.985009, 'deepseek-6.7b': 1.133763,
-#                                'stable-3b': 1.100464, 'codellama-7b': 1.935331,
-#                                'qwen3-0.6b': 1.321261, 'qwen3-1.7b': 0.615286,  'qwen3-4b': 0.713363, 'qwen3-8b': 0.705971,}
-
-model_entropy_threshold_dic = {'deepseek-1.3b': 1, 'deepseek-6.7b': 1,
-                               'stable-3b': 1, 'codellama-7b': 1,
-                               'qwen3-0.6b': 1, 'qwen3-1.7b': 1,  'qwen3-4b': 1, 'qwen3-8b': 1,}
-
-# Tradition版本
-# model_entropy_threshold_dic = {'deepseek-1.3b': 8888888880.985009, 'deepseek-6.7b': 8888888881.133763, 'qwen-1.5b': 8888888881.234278, 'qwen-7b': 8888888881.160773,
-#                                'stable-3b': 8888888881.100464, 'codellama-7b': 8888888881.935331,
-#                                'qwen3-0.6b': 8888888881.321261, 'qwen3-1.7b': 8888888880.615286,  'qwen3-4b': 8888888880.713363, 'qwen3-8b': 8888888880.705971,}
-
-
+model_entropy_threshold_dic = {'deepseek-1.3b': 0.985009, 'deepseek-6.7b': 1.133763,
+                               'stable-3b': 1.100464, 'codellama-7b': 1.935331,
+                               'qwen3-0.6b': 1.321261, 'qwen3-1.7b': 0.615286,  'qwen3-4b': 0.713363, 'qwen3-8b': 0.705971,}
 
 class Generator:
     def __init__(
