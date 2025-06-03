@@ -306,9 +306,6 @@ class Generator:
         return topk_scores, topk_indices
 
     def get_lookahead_score_fixL(self, token_ids, lookahead_length, decoded_prompt):
-        '''
-        AdaFixL的打分函数
-        '''
         batch_size = token_ids.shape[0]
         beam_size = self.beam_size
 
@@ -373,9 +370,6 @@ class Generator:
         return max_scores, max_lengths
 
     def get_lookahead_score_DynL(self, token_ids, lookahead_length, prompt):
-        '''
-        AdaDynL的lookahead打分函数
-        '''
         beam_size = self.beam_size
         actual_lookahead_length = 0
 
@@ -461,10 +455,6 @@ class Generator:
             ground_truth,
             filename,
     ):
-        """
-        根据给定 prompt 和 ground_truth，通过模型对已有序列进行一步一步的预测，
-        保存结果到 CSV 文件，包含 GenerationID，支持追加写入
-        """
         generation_id = self.generation_counter
         self.generation_counter += 1
 
