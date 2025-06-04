@@ -1,5 +1,5 @@
-from human_eval.data import HUMAN_EVAL
-from human_eval.evaluation import evaluate_functional_correctness
+from data.human_eval.human_eval.data import HUMAN_EVAL
+from data.human_eval.human_eval.evaluation import evaluate_functional_correctness
 
 
 def entry_point(

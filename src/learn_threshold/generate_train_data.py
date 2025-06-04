@@ -1,6 +1,10 @@
 import json
 import argparse
 from tqdm import tqdm
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from llm.models import MODEL_FACTORY
 from llm.generator import Generator

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 # \appFiveL
 appFiveL = [
@@ -15,14 +16,23 @@ appDynL = [
 appFiveL_arr = np.array(appFiveL)
 appDynL_arr = np.array(appDynL)
 
-appFiveL_mean = appFiveL_arr.mean()
-appDynL_mean = appDynL_arr.mean()
+columns = ['DS-1.3B', 'DS-6.7B', 'ST-3B', 'CL-7B', 'QW-0.6B', 'QW-1.7B', 'QW-4B', 'QW-8B']
+index = ["HumanEval", "MBPP"]
 
-print(f"\\appFiveL mean: {appFiveL_mean:.2f}%")
-print(f"\\appDynL mean: {appDynL_mean:.2f}%")
+df_fiveL = pd.DataFrame(appFiveL, index=index, columns=columns)
+df_dynL = pd.DataFrame(appDynL, index=index, columns=columns)
 
-all_values = np.array(appFiveL + appDynL)
+df_fiveL["Mean"] = df_fiveL.mean(axis=1)
+df_dynL["Mean"] = df_dynL.mean(axis=1)
 
-overall_mean = all_values.mean()
+df_fiveL["Method"] = "\\appFiveL"
+df_dynL["Method"] = "\\appDynL"
 
-print(f"overall mean: {overall_mean:.2f}%")
+df_all = pd.concat([df_fiveL, df_dynL])
+
+df_all = df_all[["Method"] + columns + ["Mean"]]
+
+overall_mean = np.array(appFiveL + appDynL).mean()
+
+print(df_all)
+print(f"\nOverall Mean: {overall_mean:.2f}%")

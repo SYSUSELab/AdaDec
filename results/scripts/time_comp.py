@@ -36,7 +36,7 @@ for task in ['HumanEval', 'MBPP']:
         ]
 
 avg_delta = {
-    task: {method: sum(values)/len(values) for method, values in delta_percent[task].items()}
+    task: {method: round(sum(values)/len(values), 2) for method, values in delta_percent[task].items()}
     for task in ['HumanEval', 'MBPP']
 }
 
@@ -51,8 +51,13 @@ mbpp_df = mbpp_df.round(2)
 delta_h_df = delta_h_df.round(2)
 delta_m_df = delta_m_df.round(2)
 
-print(humaneval_df)
-print(mbpp_df)
-print(delta_h_df)
-print(delta_m_df)
+print("=== Avg Time (HumanEval) ===")
+print(humaneval_df.round(2))
+print("\n=== Avg Time (MBPP) ===")
+print(mbpp_df.round(2))
+print("\n===  Delta (HumanEval) ===")
+print(delta_h_df.round(2))
+print("\n=== Delta (MBPP) ===")
+print(delta_m_df.round(2))
+print("\n=== Avg Delta ===")
 print(avg_delta)

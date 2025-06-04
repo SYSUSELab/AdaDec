@@ -6,9 +6,8 @@ import logging
 import numpy as np
 import tqdm
 
-from human_eval.human_eval.data import HUMAN_EVAL, read_problems, stream_jsonl, write_jsonl
-from human_eval.human_eval.execution import check_correctness
-
+from data.human_eval.human_eval.data import HUMAN_EVAL, read_problems, stream_jsonl, write_jsonl
+from data.human_eval.human_eval.execution import check_correctness
 
 def estimate_pass_at_k(
     num_samples: Union[int, List[int], np.ndarray],

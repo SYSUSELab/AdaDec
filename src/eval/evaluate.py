@@ -13,7 +13,7 @@ from typing import List
 
 from tqdm import tqdm
 
-sys.path.append('.')
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from llm.models import MODEL_FACTORY
 from llm.generator import Generator
@@ -273,6 +273,7 @@ parser.add_argument('--lookahead_beam_size', help='lookahead beam size', require
 parser.add_argument('--logging_detail', help='logging detail or not', action='store_true')
 
 parser.add_argument('--dataset', help='select a dataset, humaneval or mbpp', required=False, type=str)
+parser.add_argument('--dirname', help='directory name', required=False, type=str, default='new')
 
 
 
@@ -280,11 +281,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    filename = f"experiments/{args.dataset}_outputs/{args.model}/new/{args.model}"
+    filename = f"experiments/{args.dataset}_outputs/{args.model}/{args.dirname}/{args.model}"
     
     init_log(f"{filename}.log")
 
-    if args.dataset is 'humaneval':
+    if args.dataset == 'humaneval':
         problems = [(task_id, problem) for task_id, problem in read_problems().items()]
         print(f"Read {len(problems)} problems.")
 
@@ -333,10 +334,10 @@ if __name__ == "__main__":
         write_jsonl(f"{filename}.jsonl", samples)
         entry_point(sample_file=f"{filename}.jsonl")
     
-    elif args.dataset is 'mbpp':
+    elif args.dataset == 'mbpp':
         # Load MBPP dataset
-        problems = load_mbpp_dataset('mbpp.jsonl', num=200)
-        prompt_heads = extract_code_lines('mbpp.jsonl')
+        problems = load_mbpp_dataset('data/mbpp.jsonl', num=200)
+        prompt_heads = extract_code_lines('data/mbpp.jsonl')
         
         print(f"Read {len(problems)} problems.")
         
@@ -369,7 +370,7 @@ if __name__ == "__main__":
             logging.info(f"##### SOLUTION ######\n{problem['code']}")
 
             # Generate code
-            generated_code = generator.generate(prompt=problem["prompt"], 
+            generated_code = generator.generate(prompt=prompt, 
                                                 beam_size=args.beam, 
                                                 max_new_tokens=args.max_new_tokens,
                                                 lambda_value=args.lambda_value,

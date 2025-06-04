@@ -1,0 +1,9 @@
+           Model  Spearman Correlation  p-value  sampleNum
+0  deepseek-1.3b              0.472759      0.0     180879
+1  deepseek-6.7b              0.459484      0.0     180879
+2      stable-3b              0.461996      0.0     169496
+3   codellama-7b              0.451232      0.0     177650
+4     qwen3-0.6b              0.524900      0.0     129165
+5     qwen3-1.7b              0.502849      0.0     129165
+6       qwen3-4b              0.493643      0.0     129165
+7       qwen3-8b              0.487701      0.0     129165

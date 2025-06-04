@@ -3,6 +3,7 @@ import torch
 import pandas as pd
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 import os
+import json
 
 
 
@@ -59,9 +60,9 @@ class Generator:
         log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
         return -torch.sum(next_token_probs_exp * log_probs, dim=-1)
 
-    def select_top_beam_scores(self, beam_size, topk_scores, topk_indices):
+    def select_top_beam_scores(self, beam_size, topk_scores, topk_indices, mode):
         
-        if self.decoding_mode == 'AdaDynL':
+        if mode == 'AdaDynL' or mode == 'Traditional':
             if isinstance(topk_scores, list):
                 topk_scores = torch.cat(topk_scores, dim=0)
                 topk_indices = torch.cat(topk_indices, dim=0)
@@ -89,7 +90,7 @@ class Generator:
             else:
                 raise ValueError(f"Unsupported topk_scores size: expected {beam_size} or {beam_size * beam_size}, got {total_candidates}")
         
-        elif self.decoding_mode == 'AdaFixL':
+        elif mode == 'AdaFixL':
             total_candidates = topk_scores.size(0)
             assert total_candidates % beam_size == 0, "topk_scores size must be divisible by beam_size"
             
@@ -109,7 +110,7 @@ class Generator:
             return final_scores, final_indices, selected_groups
         
         else:
-           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+           raise ValueError(f"Unsupported decoding_mode: got {self.decoding_mode}")
 
     def scoring_function(self, next_token_logits, beam_scores, beam_size):
 
@@ -119,7 +120,7 @@ class Generator:
             topk_scores += beam_scores.item()
             return topk_scores, topk_indices
         
-        elif self.decoding_mode == 'AdaFixL':
+        elif self.decoding_mode == 'AdaFixL' or self.decoding_mode == 'Traditional':
             log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)  # [batch, vocab]
             topk_scores, topk_indices = torch.topk(log_probs, beam_size, dim=-1)    # [batch, beam_size]
 
@@ -134,7 +135,7 @@ class Generator:
             return topk_scores, topk_indices
         
         else:
-           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+           raise ValueError(f"Unsupported decoding_mode: {self.decoding_mode}")
     
     def generate(
             self,
@@ -225,7 +226,8 @@ class Generator:
                     topk_scores, topk_indices, beam_indices = self.select_top_beam_scores(
                         beam_size=beam_size,
                         topk_scores=topk_k_scores,
-                        topk_indices=topk_k_indices
+                        topk_indices=topk_k_indices,
+                        mode='Traditional'
                     )
 
                 self.logging_gen += f"\ntopk_scores:{topk_scores}\n"
@@ -313,21 +315,29 @@ class Generator:
                 lookahead_length=lookahead_length,
                 decoded_prompt=decoded_prompt
             )
+            total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
+
+            topk_scores, topk_indices_temp = torch.topk(total_scores, beam_size)
+            topk_indices = topk_indices[topk_indices_temp]
+
+            return topk_scores, topk_indices
         elif self.decoding_mode == 'AdaDynL':
-            lookahead_scores, actual_lengths = self.get_lookahead_score_DynL(
-                token_ids=token_ids,
-                lookahead_length=lookahead_length,
-                decoded_prompt=decoded_prompt
-            )
+            for i in range(lookahead_beam_size):
+                lookahead_score, actual_length = self.get_lookahead_score_DynL(
+                    token_ids=token_ids[i].unsqueeze(0).to(self.model.device),
+                    lookahead_length=lookahead_length,
+                    decoded_prompt=decoded_prompt
+                )
+                topk_scores[i] = history_topk_score + (current_topk_scores[i] + lookahead_score) / (actual_length + 1) * lambda_value
+
+            topk_scores, topk_indices_temp = torch.topk(topk_scores, beam_size)
+            topk_indices = topk_indices[topk_indices_temp]
+
+            return topk_scores, topk_indices
+        
         else:
            raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
 
-        total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
-
-        topk_scores, topk_indices_temp = torch.topk(total_scores, beam_size)
-        topk_indices = topk_indices[topk_indices_temp]
-
-        return topk_scores, topk_indices
 
     def get_lookahead_score_fixL(self, token_ids, lookahead_length, decoded_prompt):
         batch_size = token_ids.shape[0]
@@ -355,7 +365,8 @@ class Generator:
                 selected_scores, selected_indices, beam_idx = self.select_top_beam_scores(
                     beam_size=beam_size,
                     topk_scores=topk_scores,
-                    topk_indices=topk_indices
+                    topk_indices=topk_indices,
+                    mode='AdaFixL'
                 )
 
                 lookahead_scores = selected_scores
@@ -406,7 +417,7 @@ class Generator:
         is_finished = [False] * beam_size
 
         with torch.no_grad():
-            for _i in range(lookahead_length):
+            for _ in range(lookahead_length):
                 if all(is_finished):
                     break
 
@@ -431,7 +442,8 @@ class Generator:
                 topk_scores, topk_indices, beam_indices = self.select_top_beam_scores(
                     beam_size=beam_size,
                     topk_scores=topk_k_scores,
-                    topk_indices=topk_k_indices
+                    topk_indices=topk_k_indices,
+                    mode='AdaDynL'
                 )
 
                 actual_lookahead_length += 1

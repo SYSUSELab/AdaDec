@@ -122,7 +122,7 @@ def evaluate_model(model, X_test, y_test, model_name):
 
 def main(args):
     target_list = ['Entropy']
-    df = load_and_preprocess_data(f'lr_train_data/{args.model}_statistics.parquet', target_list)
+    df = load_and_preprocess_data(f'data/gt_guide_data/{args.model}_statistics.parquet', target_list)
     
     X_train, X_test, y_train, y_test = split_data(df, target_list)
     
