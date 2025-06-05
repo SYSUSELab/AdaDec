@@ -13,7 +13,7 @@ class AlphaRenamer(ast.NodeTransformer):
         self.counter = itertools.count()
         self.env = {}  # {original name: new name}
 
-    def fresh(selx) -> str:
+    def fresh(self) -> str:
         return f"v{next(self.counter)}"
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
