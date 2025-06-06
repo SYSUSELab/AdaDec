@@ -12,7 +12,7 @@ conda activate adadec
 
 ## Usage
 
-### 1. Generate GT-Guide Data *(Optional)*
+### 1. Generate GT-Guide Data
 
 If you are testing a new model, you can generate GT-guide data (stored in `data/gt_guide_data`) using:
 
