@@ -145,7 +145,7 @@ class Generator:
             lambda_value=1,
             lookahead_length=5,
             lookahead_beam_size=3,
-            logging_detail = True,
+            logging_detail = False,
     ):
         self.beam_size = beam_size
         self.lookahead_beam_size = lookahead_beam_size

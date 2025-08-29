@@ -10,6 +10,8 @@ import time
 import json
 import multiprocessing
 from typing import List
+from datasets import load_dataset
+import traceback
 
 from tqdm import tqdm
 
@@ -17,6 +19,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from llm.models import MODEL_FACTORY
 from llm.generator import Generator
+from llm.generator_deveval import Generator_DevEval
 
 from data.human_eval.human_eval.data import write_jsonl, read_problems, stream_jsonl, HUMAN_EVAL
 from data.human_eval.human_eval.evaluation import evaluate_functional_correctness
@@ -166,6 +169,167 @@ def evaluate_generation(problem, generated_code, timeout=3):
 
     return result_dict.get('passed', False)
 
+def build_prompt(example: dict) -> str:
+    """
+    从 mbppplus 的一条样本构造 prompt:
+    [可能的 import 代码] + def 函数签名 + docstring(来自prompt) + # YOUR CODE HERE
+    """
+    code = example["code"].strip().splitlines()
+
+    def_index = None
+    for i, line in enumerate(code):
+        if line.strip().startswith("def "):
+            def_index = i
+            break
+    if def_index is None:
+        raise ValueError(f"无法在 code 中找到函数定义: {example['code'][:80]}")
+
+    # 前面的 import / 辅助代码
+    prefix_code = "\n".join(code[:def_index])
+
+    # 函数定义行
+    def_line = code[def_index]
+
+    # 题目描述放在 docstring
+    docstring = example["prompt"].strip()
+
+    # 组装
+    prompt_parts = []
+    if prefix_code:
+        prompt_parts.append(prefix_code)  # import 语句
+    prompt_parts.append(f"""{def_line}
+    \"\"\" {docstring} \"\"\"
+    # YOUR CODE HERE""")
+
+    return "\n".join(prompt_parts) + "\n"
+
+
+import traceback
+import multiprocessing
+
+def _exec_with_env(code: str, env: dict, problem: dict):
+    """子进程中执行代码 + 测试"""
+    # 执行模型生成的代码
+    exec(code, env, env)
+
+    # 执行 test_imports
+    for imp in problem.get("test_imports", []):
+        exec(imp, env, env)
+
+    # 执行 test_list 的断言
+    for t in problem.get("test_list", []):
+        exec(t, env, env)
+
+    # 执行完整的 test 脚本
+    exec(problem["test"], env, env)
+
+
+import multiprocessing
+import traceback
+
+def evaluate_generation_mbppplus(problem: dict, generated_code: str, timeout: int = 5):
+    """
+    针对 mbppplus 的简化评估函数（带超时机制）
+    :param problem: 一条 mbppplus 的数据
+    :param generated_code: 模型生成的代码 (str)
+    :param timeout: 最大允许执行秒数
+    :return: dict，只包含 evaluation 字段 (True/False)
+    """
+    evaluation = False  # 默认不通过
+
+    # 每个候选代码独立环境
+    env = {"__builtins__": __builtins__}
+
+    def runner(return_dict):
+        try:
+            _exec_with_env(generated_code, env, problem)
+            return_dict["success"] = True
+        except Exception:
+            return_dict["success"] = False
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    p = multiprocessing.Process(target=runner, args=(return_dict,))
+    p.start()
+    p.join(timeout)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        evaluation = False
+    else:
+        evaluation = return_dict.get("success", False)
+
+    return evaluation
+
+
+
+
+
+# HumanEvalPlus
+
+import multiprocessing
+import traceback
+import builtins
+
+def exec_with_env_humanevalplus(code: str, env: dict, problem: dict):
+    """子进程中执行代码 + 测试"""
+    # 执行模型生成的代码
+    exec(code, env, env)
+    
+    # 执行完整的 test 脚本
+    exec(problem["test"], env, env)
+    
+    # 获取函数名并调用 check 函数进行测试
+    entry_point = problem["entry_point"]
+    if entry_point in env:
+        env["check"](env[entry_point])
+    else:
+        raise NameError(f"Function '{entry_point}' not found in generated code")
+
+def evaluate_generation_humanevalplus(problem: dict, generated_code: str, timeout: int = 5):
+    """
+    针对 HumanEval+ 的简化评估函数（带超时机制）
+    :param problem: 一条 HumanEval+ 的数据
+    :param generated_code: 模型生成的代码 (str)
+    :param timeout: 最大允许执行秒数
+    :return: bool，表示是否通过所有测试
+    """
+    evaluation = False  # 默认不通过
+    
+    # 每个候选代码独立环境
+    env = {"__builtins__": builtins}
+    
+    def runner(return_dict):
+        try:
+            exec_with_env_humanevalplus(generated_code, env, problem)
+            return_dict["success"] = True
+        except Exception as e:
+            return_dict["success"] = False
+            return_dict["error"] = str(e)
+    
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    p = multiprocessing.Process(target=runner, args=(return_dict,))
+    p.start()
+    p.join(timeout)
+    
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        evaluation = False
+    else:
+        evaluation = return_dict.get("success", False)
+    
+    return evaluation
+
+
+
+
+
+
+
+
 def summarize_results(results):
     total_problems = len(results)
     passed_problems = sum(1 for res in results if res["evaluation"])
@@ -259,6 +423,141 @@ def extract_first_func(code):
 
 
 
+def load_deveval_dataset(file_path):
+    """
+    从jsonl文件中读取DevEval数据集，返回列表 problems。
+    每一条数据包含 namespace 和 prompt 两个字段。
+    """
+    problems = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            data = json.loads(line)
+            problems.append({
+                "namespace": data["namespace"],
+                "prompt": data["prompt"]
+            })
+    return problems[-100:] # 取最后100条数据
+
+def extract_python_code_deveval(text):
+    """
+    从字符串中提取Python代码块中的函数体内容
+    
+    Args:
+        text (str): 包含Python代码的字符串
+        
+    Returns:
+        str: 提取出的Python代码，保持原始缩进
+    """
+    # 查找Python代码块（用```python或```Python包围的部分）
+    code_block_pattern = r'```[Pp]ython\n(.*?)\n```'
+    matches = re.findall(code_block_pattern, text, re.DOTALL)
+    
+    if not matches:
+        return ""
+    
+    # 取第一个匹配的代码块
+    code_block = matches[0]
+    
+    # 按行分割代码
+    lines = code_block.split('\n')
+    
+    # 找到函数定义行的索引
+    def_line_index = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith('def '):
+            def_line_index = i
+            break
+    
+    if def_line_index == -1:
+        # 如果没有找到函数定义，返回整个代码块（去掉首尾空行）
+        result_lines = []
+        for line in lines:
+            if line.strip():  # 非空行
+                result_lines.append(line)
+        return '\n'.join(result_lines)
+    
+    # 从函数定义行之后开始处理
+    remaining_lines = lines[def_line_index + 1:]
+    
+    # 跳过文档字符串
+    in_docstring = False
+    docstring_quotes = None
+    start_index = 0
+    
+    for i, line in enumerate(remaining_lines):
+        stripped_line = line.strip()
+        
+        if not in_docstring:
+            # 检查是否是文档字符串的开始
+            if stripped_line.startswith('"""') or stripped_line.startswith("'''"):
+                in_docstring = True
+                docstring_quotes = stripped_line[:3]
+                # 检查是否在同一行结束
+                if stripped_line.count(docstring_quotes) >= 2:
+                    in_docstring = False
+                    start_index = i + 1
+                continue
+            elif stripped_line and not stripped_line.startswith('#'):
+                # 找到第一个非空非注释行，开始提取
+                start_index = i
+                break
+        else:
+            # 在文档字符串中，查找结束标记
+            if docstring_quotes in line:
+                in_docstring = False
+                start_index = i + 1
+    
+    # 提取函数体内容
+    function_body_lines = remaining_lines[start_index:]
+    
+    # 去掉末尾的空行
+    while function_body_lines and not function_body_lines[-1].strip():
+        function_body_lines.pop()
+    
+    # 如果没有函数体内容，返回空字符串
+    if not function_body_lines:
+        return ""
+    
+    # 直接保持原始缩进，不做调整
+    result_lines = function_body_lines
+    
+    # 去掉结尾的空行
+    while result_lines and not result_lines[-1].strip():
+        result_lines.pop()
+    
+    return '\n'.join(result_lines)
+
+def extract_function_body(code_string):
+    """
+    从字符串中提取函数体内容，保持原有缩进，去掉尾部第一个无缩进行及其之后的所有行
+    """
+    # 匹配函数定义行（def 开头），然后匹配文档字符串（可选），最后匹配函数体
+    pattern = r'def\s+\w+\([^)]*\):\s*(?:\n\s*""".*?"""\s*)?(\n(?:\s{4,}.*\n?)*)'
+    
+    match = re.search(pattern, code_string, re.DOTALL)
+    
+    if match:
+        function_body = match.group(1)
+        # 去除开头的换行符，但保持内容的缩进
+        function_body = function_body.lstrip('\n').rstrip()
+        
+        # 去掉尾部第一个无缩进行及其之后的所有行内容
+        lines = function_body.split('\n')
+        result_lines = []
+        
+        for line in lines:
+            # 检查是否为无缩进行（非空行且不以空格开头）
+            if line and not line.startswith(' '):
+                # 遇到第一个无缩进行，停止添加
+                break
+            result_lines.append(line)
+        
+        return '\n'.join(result_lines).rstrip()
+    
+    return None
+
+
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--model', help='model name', required=True, type=str)
@@ -277,11 +576,15 @@ parser.add_argument('--dirname', help='directory name', required=False, type=str
 
 
 
-if __name__ == "__main__":
+def main():
 
     args = parser.parse_args()
     
-    filename = f"experiments/{args.dataset}_outputs/{args.model}/{args.dirname}/{args.model}"
+    filename = ""
+    if args.beam > 1:
+        filename = f"experiments/{args.dataset}_outputs/{args.model}/beamsearch_{args.beam}/{args.model}"
+    else:
+        filename = f"experiments/{args.dataset}_outputs/{args.model}/{args.decoding_mode}/{args.model}"
     
     init_log(f"{filename}.log")
 
@@ -385,7 +688,7 @@ if __name__ == "__main__":
                 for i, pred in enumerate(generated_code):
                     generated_code[i] = extract_python_code(pred)
             else:
-                generated_code[0] = extract_python_code(generated_code)
+                generated_code = extract_python_code(generated_code)
 
             if isinstance(generated_code, list):
                 for i, pred in enumerate(generated_code):
@@ -418,6 +721,259 @@ if __name__ == "__main__":
                 f.write(json.dumps(res, ensure_ascii=False) + "\n")
 
         summarize_results(results)
+
+    elif args.dataset == 'mbpp+':
+        # ========== Step 1. 加载数据集 ==========
+        ds = load_dataset("evalplus/mbppplus")
+        problems = ds["test"]  # 378 道题
+        # 取前3个数据
+        # problems = problems.select(range(3))
+        
+        print(f"Read {len(problems)} problems.")
+        
+        # ========== Step 2. 初始化模型 ==========
+        model, tokenizer = MODEL_FACTORY[args.model]()
+        generator = Generator(
+            model=model,
+            tokenizer=tokenizer,
+            model_name=args.model,
+            beam_size=args.beam,
+            decoding_mode=args.decoding_mode,
+            entropy_threshold=args.entropy_threshold
+        )
+        
+        # ========== Step 3. 遍历生成 ==========
+        start_time = time.time()
+        results = []
+
+        for idx, problem in enumerate(problems):
+            # prompt 直接来自字段
+            task_id = problem["task_id"]
+            
+            prompt = build_prompt(problem)
+            if args.model.startswith('qwen3-'):
+                prompt = '/no_think\n' + prompt
+
+            # Log problem details
+            logging.info(f"##### TASK_ID: {task_id} ######")
+            logging.info(f"##### PROMPT ######\n{prompt}")
+            logging.info(f"##### SOLUTION ######\n{problem['code']}")
+
+            # Generate
+            generated_code = generator.generate(
+                prompt=prompt,
+                beam_size=args.beam,
+                max_new_tokens=args.max_new_tokens,
+                lambda_value=args.lambda_value,
+                lookahead_length=args.lookahead_length,
+                lookahead_beam_size=args.lookahead_beam_size,
+                logging_detail=args.logging_detail
+            )
+            
+            for i, pred in enumerate(generated_code):
+                generated_code[i] = prompt + pred
+
+            # 后处理
+            if isinstance(generated_code, list):
+                generated_code = [extract_python_code(pred) for pred in generated_code]
+            else:
+                generated_code = [extract_python_code(generated_code)]
+
+            for i, pred in enumerate(generated_code):
+                logging.info(f"##### PREDICTION-{i + 1} ######\n{pred}")
+
+            results.append({
+                "problem_id": task_id,
+                "prompt": prompt,
+                "generated_code": generated_code,
+            })
+            logging.info("\n\n")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logging.info(f"Total time taken: {elapsed_time:.2f} seconds")
+
+        # ========== Step 4. 评估 ==========
+        for res, problem in tqdm(zip(results, problems), total=len(results), desc="Evaluating results"):
+            generated_code = res["generated_code"][0] if isinstance(res["generated_code"], list) else res["generated_code"]
+            eval_result = evaluate_generation_mbppplus(problem, generated_code)
+            res["evaluation"] = eval_result
+
+        # ========== Step 5. 保存结果 ==========
+        output_file = f"{filename}.jsonl"
+        with open(output_file, "w", encoding="utf-8") as f:
+            for res in results:
+                f.write(json.dumps(res, ensure_ascii=False) + "\n")
+
+        summarize_results(results)
+    
+    elif args.dataset == 'humaneval+':
+        # ========== Step 1. 加载数据集 ==========
+        ds = load_dataset("evalplus/humanevalplus")
+        problems = ds["test"] # 164 道题
+        # 取前几个数据
+        # problems = problems.select(range(20))
+        
+        print(f"Read {len(problems)} problems.")
+        
+        # ========== Step 2. 初始化模型 ==========
+        model, tokenizer = MODEL_FACTORY[args.model]()
+        generator = Generator(
+            model=model,
+            tokenizer=tokenizer,
+            model_name=args.model,
+            beam_size=args.beam,
+            decoding_mode=args.decoding_mode,
+            entropy_threshold=args.entropy_threshold
+        )
+        
+        # ========== Step 3. 遍历生成 ==========
+        start_time = time.time()
+        results = []
+
+        for idx, problem in enumerate(problems):
+            # prompt 直接来自字段
+            task_id = problem["task_id"]
+            
+            prompt = problem["prompt"]
+            if args.model.startswith('qwen3-'):
+                prompt = '/no_think\n' + prompt
+
+            # Log problem details
+            logging.info(f"##### TASK_ID: {task_id} ######")
+            logging.info(f"##### PROMPT ######\n{prompt}")
+            logging.info(f"##### SOLUTION ######\n{problem['canonical_solution']}")
+
+            # Generate
+            generated_code = generator.generate(
+                prompt=prompt,
+                beam_size=args.beam,
+                max_new_tokens=args.max_new_tokens,
+                lambda_value=args.lambda_value,
+                lookahead_length=args.lookahead_length,
+                lookahead_beam_size=args.lookahead_beam_size,
+                logging_detail=args.logging_detail
+            )
+            
+            for i, pred in enumerate(generated_code):
+                generated_code[i] = prompt + pred
+
+            # 后处理
+            if isinstance(generated_code, list):
+                generated_code = [extract_python_code(pred) for pred in generated_code]
+            else:
+                generated_code = [extract_python_code(generated_code)]
+
+            for i, pred in enumerate(generated_code):
+                logging.info(f"##### PREDICTION-{i + 1} ######\n{pred}")
+
+            results.append({
+                "problem_id": task_id,
+                "prompt": prompt,
+                "generated_code": generated_code,
+            })
+            logging.info("\n\n")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logging.info(f"Total time taken: {elapsed_time:.2f} seconds")
+
+        # ========== Step 4. 评估 ==========
+        for res, problem in tqdm(zip(results, problems), total=len(results), desc="Evaluating results"):
+            generated_code = res["generated_code"][0] if isinstance(res["generated_code"], list) else res["generated_code"]
+            eval_result = evaluate_generation_humanevalplus(problem, generated_code)
+            res["evaluation"] = eval_result
+
+        # ========== Step 5. 保存结果 ==========
+        output_file = f"{filename}.jsonl"
+        with open(output_file, "w", encoding="utf-8") as f:
+            for res in results:
+                f.write(json.dumps(res, ensure_ascii=False) + "\n")
+
+        summarize_results(results)
+        
+    
+    elif args.dataset == 'deveval':
+        # ========== Step 1. 加载数据集 ==========
+        problems = load_deveval_dataset('deveval_data.jsonl')
+
+        # print(problems[0]["prompt"])
+        # return
+        
+        print(f"Read {len(problems)} problems.")
+        
+        # ========== Step 2. 初始化模型 ==========
+        model, tokenizer = MODEL_FACTORY[args.model]()
+        generator = Generator(
+            model=model,
+            tokenizer=tokenizer,
+            model_name=args.model,
+            beam_size=args.beam,
+            decoding_mode=args.decoding_mode,
+            entropy_threshold=args.entropy_threshold
+        )
+        
+        # ========== Step 3. 遍历生成 ==========
+        start_time = time.time()
+        results = []
+
+        for idx, problem in enumerate(problems):
+            task_id = idx
+            
+            # prompt 直接来自字段
+            prompt = problem["prompt"]
+            if args.model.startswith('qwen3-'):
+                prompt = '/no_think\n' + prompt
+
+            # Log problem details
+            logging.info(f"##### TASK_ID: {task_id} ######")
+            logging.info(f"##### PROMPT ######\n{prompt}")
+            # logging.info(f"##### SOLUTION ######\n{problem['canonical_solution']}")
+
+            # Generate
+            generated_code = generator.generate(
+                prompt=prompt,
+                beam_size=args.beam,
+                max_new_tokens=args.max_new_tokens,
+                lambda_value=args.lambda_value,
+                lookahead_length=args.lookahead_length,
+                lookahead_beam_size=args.lookahead_beam_size,
+                logging_detail=args.logging_detail
+            )
+            
+            for i, pred in enumerate(generated_code):
+                generated_code[i] = prompt + pred
+
+            if isinstance(generated_code, list):
+                generated_code = [extract_function_body(pred) for pred in generated_code]
+            else:
+                generated_code = [extract_function_body(generated_code)]
+
+            for i, pred in enumerate(generated_code):
+                logging.info(f"##### PREDICTION-{i + 1} ######\n{pred}")
+
+            results.append({
+                "namespace": problem["namespace"],
+                "completion": (generated_code[0] if isinstance(generated_code, list) else generated_code) or "",
+            })
+            logging.info("\n\n")
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logging.info(f"Total time taken: {elapsed_time:.2f} seconds")
+
+
+        # ========== Step 5. 保存结果 ==========
+        output_file = f"{filename}.jsonl"
+        with open(output_file, "w", encoding="utf-8") as f:
+            for res in results:
+                f.write(json.dumps(res, ensure_ascii=False) + "\n")
+        
     
     else:
         raise ValueError("dataset must be 'humaneval' or 'mbpp'.")
+    
+    
+    
+if __name__ == "__main__":
+    main()
