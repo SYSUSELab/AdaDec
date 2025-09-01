@@ -1,5 +1,7 @@
 import os
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 
 import argparse
 import logging
@@ -436,7 +438,7 @@ def load_deveval_dataset(file_path):
                 "namespace": data["namespace"],
                 "prompt": data["prompt"]
             })
-    return problems[-100:] # 取最后100条数据
+    return problems[500:] # 只取后面的数据，前面已经跑过了
 
 def extract_python_code_deveval(text):
     """
@@ -913,6 +915,8 @@ def main():
             entropy_threshold=args.entropy_threshold
         )
         
+        # return
+        
         # ========== Step 3. 遍历生成 ==========
         start_time = time.time()
         results = []
@@ -971,7 +975,7 @@ def main():
         
     
     else:
-        raise ValueError("dataset must be 'humaneval' or 'mbpp'.")
+        raise ValueError("dataset must be 'humaneval' or 'mbpp' or 'humaneval+' or 'mbpp+' or 'deveval'.")
     
     
     
