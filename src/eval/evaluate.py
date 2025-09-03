@@ -438,7 +438,7 @@ def load_deveval_dataset(file_path):
                 "namespace": data["namespace"],
                 "prompt": data["prompt"]
             })
-    return problems
+    return problems[500:]  # 只评估500之后的部分
 
 def extract_python_code_deveval(text):
     """
