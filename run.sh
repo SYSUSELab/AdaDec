@@ -82,16 +82,16 @@
 
 
 
-if [ ! -f .env_initialized ]; then
-    echo "正在进行首次设置：创建并激活 Conda 环境..."
-    conda env create -f env.yml
-    conda activate adadec
-    # 创建一个标记文件，以便下次运行时跳过初始化
-    touch .env_initialized
-    echo "初始化完成。"
-else
-    echo "Conda 环境已初始化。正在跳过..."
-fi
+# if [ ! -f .env_initialized ]; then
+#     echo "正在进行首次设置：创建并激活 Conda 环境..."
+#     conda env create -f env.yml
+#     conda activate adadec
+#     # 创建一个标记文件，以便下次运行时跳过初始化
+#     touch .env_initialized
+#     echo "初始化完成。"
+# else
+#     echo "Conda 环境已初始化。正在跳过..."
+# fi
 
 
 echo "开始运行评估任务..."
