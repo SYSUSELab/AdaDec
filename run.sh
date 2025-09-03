@@ -2,6 +2,84 @@
 
 
 
+# echo "开始运行评估任务..."
+# Models=("deepseek-1.3b" "stable-3b" "qwen3-0.6b" "qwen3-1.7b" "deepseek-6.7b" "codellama-7b" "qwen3-4b" "qwen3-8b")
+# Datasets=("humaneval+" "mbpp+")
+
+# # echo "正在激活 adadec 环境..."
+# # conda activate adadec
+
+# # 支持命令行参数
+# if [ $# -eq 2 ]; then
+#   USE_GPUS=$1
+#   IFS=' ' read -ra GPU_IDS <<< "$2"
+# else
+#   # 默认配置：使用前2个GPU
+#   USE_GPUS=2
+#   GPU_IDS=(0 1)
+# fi
+
+# # 参数检查
+# TOTAL_GPUS=$(nvidia-smi -L | wc -l)
+# if [ $USE_GPUS -gt $TOTAL_GPUS ]; then
+#   echo "错误：要使用的GPU数量($USE_GPUS)超过了可用GPU数量($TOTAL_GPUS)"
+#   exit 1
+# fi
+
+# if [ ${#GPU_IDS[@]} -ne $USE_GPUS ]; then
+#   echo "错误：GPU_IDS数组长度(${#GPU_IDS[@]})与USE_GPUS($USE_GPUS)不匹配"
+#   exit 1
+# fi
+
+# echo "将使用 $USE_GPUS 个GPU: ${GPU_IDS[*]}"
+
+# # 简单的任务执行函数
+# run_task() {
+#   local model=$1
+#   local dataset=$2
+#   local job_slot=$3
+  
+#   # 将GPU_IDS导入到函数内部
+#   IFS=' ' read -ra LOCAL_GPU_IDS <<< "${GPU_IDS_STR}"
+  
+#   # 轮询分配GPU
+#   local gpu_index=$(( (job_slot - 1) % USE_GPUS ))
+#   local gpu_id=${LOCAL_GPU_IDS[$gpu_index]}
+  
+#   echo "[$(date '+%H:%M:%S')] GPU $gpu_id: $model - $dataset 开始"
+#   CUDA_VISIBLE_DEVICES=$gpu_id python src/eval/evaluate_cot.py \
+#     --model $model \
+#     --decoding_mode AdaDynL \
+#     --lookahead_length 20 \
+#     --dataset $dataset \
+#     --entropy_threshold 0.12 \
+#     --logging_detail
+#   echo "[$(date '+%H:%M:%S')] GPU $gpu_id: $model - $dataset 完成"
+# }
+
+# export -f run_task
+# export USE_GPUS
+# export GPU_IDS_STR="${GPU_IDS[*]}"
+
+# # 生成任务列表
+# > task_list.txt
+# for Model in "${Models[@]}"; do
+#   for Dataset in "${Datasets[@]}"; do
+#     echo "$Model $Dataset" >> task_list.txt
+#   done
+# done
+
+# # 并行执行
+# echo "开始并行执行任务..."
+# parallel -j $USE_GPUS --colsep ' ' run_task {1} {2} {%} :::: task_list.txt
+
+# # 清理
+# rm task_list.txt
+# echo "所有评估任务已完成。"
+
+
+
+
 
 
 if [ ! -f .env_initialized ]; then
@@ -61,8 +139,16 @@ run_task() {
   local gpu_id=${LOCAL_GPU_IDS[$gpu_index]}
   
   echo "[$(date '+%H:%M:%S')] GPU $gpu_id: $model - $mode 开始"
-  echo "正在评估模型：$Model，模式：$Mode"
-  CUDA_VISIBLE_DEVICES=$gpu_id python src/eval/evaluate.py --model $model --decoding_mode $mode --dataset deveval
+  echo "正在评估模型：$model，模式：$mode"
+
+  if [ "$mode" == "AdaDynL" ]; then
+    CUDA_VISIBLE_DEVICES=$gpu_id python src/eval/evaluate.py \
+      --model $model --decoding_mode $mode --dataset deveval --lookahead_length 10
+  else
+    CUDA_VISIBLE_DEVICES=$gpu_id python src/eval/evaluate.py \
+      --model $model --decoding_mode $mode --dataset deveval
+  fi
+
   echo "[$(date '+%H:%M:%S')] GPU $gpu_id: $model - $mode 完成"
 }
 
@@ -80,7 +166,7 @@ done
 
 # 并行执行
 echo "开始并行执行任务..."
-parallel -j $USE_GPUS --colsep ' ' run_task {1} {2} {#} :::: task_list.txt
+parallel -j $USE_GPUS --colsep ' ' run_task {1} {2} {%} :::: task_list.txt
 
 # 清理
 rm task_list.txt

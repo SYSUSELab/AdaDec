@@ -1,69 +1,67 @@
-import re
+#!/usr/bin/env python3
+"""
+line_length_dist.py
+统计文本文件每行的长度并绘制分布图。
+用法：
+    python line_length_dist.py your_file.txt
+"""
+import argparse
+import sys
+from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-def extract_function_body(code_string):
-    """
-    从字符串中提取函数体内容，保持原有缩进，去掉尾部第一个无缩进行及其之后的所有行
-    """
-    # 匹配函数定义行（def 开头），然后匹配文档字符串（可选），最后匹配函数体
-    pattern = r'def\s+\w+\([^)]*\):\s*(?:\n\s*""".*?"""\s*)?(\n(?:\s{4,}.*\n?)*)'
-    
-    match = re.search(pattern, code_string, re.DOTALL)
-    
-    if match:
-        function_body = match.group(1)
-        # 去除开头的换行符，但保持内容的缩进
-        function_body = function_body.lstrip('\n').rstrip()
-        
-        # 去掉尾部第一个无缩进行及其之后的所有行内容
-        lines = function_body.split('\n')
-        result_lines = []
-        
-        for line in lines:
-            # 检查是否为无缩进行（非空行且不以空格开头）
-            if line and not line.startswith(' '):
-                # 遇到第一个无缩进行，停止添加
-                break
-            result_lines.append(line)
-        
-        return '\n'.join(result_lines).rstrip()
-    
-    return None
+def read_lengths(file_path: Path):
+    """读取文件并返回 (lengths, max_line_no, max_len)。"""
+    lengths = []
+    max_len = 0
+    max_line_no = None
+    with file_path.open("rt", encoding="utf-8", errors="ignore") as f:
+        for idx, line in enumerate(f, 1):
+            llen = len(line.rstrip("\n\r"))
+            lengths.append(llen)
+            if llen > max_len:
+                max_len = llen
+                max_line_no = idx
+    return lengths, max_line_no, max_len
 
-# 测试
-s1 = '''
-def is_json_serializable(val):
-    """
-    Check if the input value is JSON serializable. It checks if the input value is of the JSON serializable types.
-    :param val: Any. The input value to be checked for JSON serializability.
-    :return: Bool. True if the input value is JSON serializable, False otherwise.
-    """
-    try:
-        json.dumps(val)
-        return True
-    except (TypeError, OverflowError):
-        return False
-'''
+def plot_distribution(lengths, max_len, max_line_no, output=None):
+    """绘制长度分布直方图，并标出最长行。"""
+    sns.set_theme(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    sns.histplot(lengths, bins="auto", kde=True, color="#4c72b0")
+    plt.axvline(max_len, color='red', lw=2, ls='--',
+                label=f'max_len：{max_len} (num: {max_line_no})')
+    plt.title("各行长度分布")
+    plt.xlabel("length")
+    plt.ylabel("num")
+    plt.legend()
+    plt.tight_layout()
+    if output:
+        plt.savefig(output, dpi=300)
+        print(f"图表已保存到 {output}")
+    else:
+        plt.show()
 
-# 测试用例2：包含尾部无缩进行
-s2 = '''
-def test_function():
-    x = 1
-    y = 2
-    return x + y
+def main():
+    parser = argparse.ArgumentParser(description="统计文本文件各行长度并绘制分布图")
+    parser.add_argument("file", help="要分析的文本文件")
+    parser.add_argument("-o", "--output", help="将图表保存为图片文件（如 dist.png）")
+    args = parser.parse_args()
 
-print("这是一个无缩进的行")
-def another_function():
-    pass
-'''
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"错误：文件 {file_path} 不存在", file=sys.stderr)
+        sys.exit(1)
 
-result1 = extract_function_body(s1)
-print("测试1 - 提取的函数体:")
-print(repr(result1))
-print("\n实际显示:")
-print(result1)
+    lengths, max_line_no, max_len = read_lengths(file_path)
+    if not lengths:
+        print("文件为空，无数据可绘制。", file=sys.stderr)
+        sys.exit(0)
 
-result2 = extract_function_body(s2)
-print("\n\n测试2 - 提取的函数体:")
-print(repr(result2))
-print("\n实际显示:")
-print(result2)
+    print(f"总行数：{len(lengths)}")
+    print(f"最长行：第 {max_line_no} 行，长度 {max_len}")
+    plot_distribution(lengths, max_len, max_line_no, args.output)
+
+if __name__ == "__main__":
+    main()

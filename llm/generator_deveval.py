@@ -3,9 +3,13 @@ import torch
 import pandas as pd
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 import os
+import re
 import json
 
-
+def extract_last_def_indent(text: str) -> str:
+    # 匹配以空白开头且包含 def 的行（最后一个）
+    match = re.search(r'(?m)^(\s*)def\b(?![\s\S]*^\s*def\b)', text)
+    return match.group(1) if match else ''
 
 class Generator_DevEval:
     def __init__(
@@ -137,6 +141,8 @@ class Generator_DevEval:
         else:
            raise ValueError(f"Unsupported decoding_mode: {self.decoding_mode}")
     
+
+    
     def generate(
             self,
             prompt,
@@ -158,6 +164,10 @@ class Generator_DevEval:
             self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device),
             skip_special_tokens=True
         )
+        
+        last_def_indent = extract_last_def_indent(decoded_prompt)
+        
+        last_sequence = decoded_prompt
 
         token_ids = token_ids.repeat(beam_size, 1)  # [beam_size, seq_len]
         attention_mask = torch.ones_like(token_ids).to(self.model.device)
@@ -251,9 +261,24 @@ class Generator_DevEval:
                     decoded_prompt = self.tokenizer.decode(prompt_ids, skip_special_tokens=True)
                     decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
                     current_sequence = decoded_seq[len(decoded_prompt):]
+                    
+                    if current_sequence == last_sequence:
+                        is_finished[j] = True
+                        continue
+                    
+                    last_sequence = current_sequence
+                    
                     lines = current_sequence.split('\n')
 
-                    is_finished[j] = (len(lines) > 2 and lines[-1] == '```') or (step > 10 and all(s == "" for s in lines))
+                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
+
+                    is_endswith_Human = lines and lines[-1].strip().endswith('Human')
+
+                    all_lines_valid = all(line.startswith((last_def_indent + ' ')) for line in lines if line.strip())
+
+                    is_finished[j] = not all_lines_valid or is_consecutive_empty or is_endswith_Human
+                    
+                    is_oneline_empty = lines and lines[-1].strip() == ''
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
 
@@ -384,8 +409,9 @@ class Generator_DevEval:
                         continue
                     current_seq = decoded_seqs[i][len(decoded_prompt):]
                     lines = current_seq.split('\n')
-                    is_finished[i] = (len(lines) > 2 and lines[-1] == '```')
-                    
+                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
+                    all_lines_valid = all(not line or line.startswith((' ', '\t')) for line in lines)
+                    is_finished[i] = is_consecutive_empty or not all_lines_valid
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(device)
 
@@ -454,62 +480,23 @@ class Generator_DevEval:
                     decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
                     current_sequence = decoded_seq[len(decoded_prompt):]
                     lines = current_sequence.split('\n')
+
+                    is_consecutive_empty = (
+                        len(lines) >= 4 and
+                        all(line.strip() == '' for line in lines[-4:])
+                    )
+
+                    all_lines_valid = all(
+                        not line or line.startswith((' ', '\t'))
+                        for line in lines
+                    )
                     
-                    is_finished[j] = (len(lines) > 2 and lines[-1] == '```')
+                    ends_with_newline = current_sequence.endswith('\n')
+
+                    is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
                 
         self.logging_gen += f"actual_lookahead_length:{actual_lookahead_length}\n"
 
         return lookahead_scores.max().item(), actual_lookahead_length
-
-    def generate_base_on_ground_truth(
-            self,
-            prompt,
-            ground_truth,
-            filename,
-    ):
-        generation_id = self.generation_counter
-        self.generation_counter += 1
-
-        device = next(self.model.parameters()).device
-        prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
-        gt_ids = self.tokenizer(ground_truth, return_tensors="pt").input_ids[0].to(device)
-        current_sequence = prompt_ids
-
-        log_data = []
-
-        for i, gt_token in enumerate(gt_ids):
-            with torch.no_grad():
-                outputs = self.model(current_sequence)
-                logits = outputs.logits
-                next_logits = logits[0, -1, :]
-            topk_values, topk_indices = torch.topk(next_logits, k=50)
-            entropy = self.calculate_entropy(next_logits)
-            sorted_logits, sorted_indices = torch.sort(next_logits, descending=True)
-            rank_tensor = (sorted_indices == gt_token).nonzero()
-            rank = rank_tensor.item() + 1 if rank_tensor.numel() > 0 else -1
-
-            log_data.append({
-                "GenerationID": generation_id,
-                "Iteration": i,
-                "Entropy": float(entropy),
-                "GroundTruthToken": gt_token.item(),
-                "Rank": rank,
-                "Top50_TokenIDs": topk_indices.tolist(),
-                "Top50_TokenLogits": topk_values.tolist()
-            })
-
-            gt_token_id = gt_token.unsqueeze(0).unsqueeze(0).to(device)
-            current_sequence = torch.cat([current_sequence, gt_token_id], dim=1)
-
-            torch.cuda.empty_cache()
-
-        new_df = pd.DataFrame(log_data)
-
-        if os.path.exists(filename):
-            old_df = pd.read_parquet(filename, engine="pyarrow")
-            combined_df = pd.concat([old_df, new_df], ignore_index=True)
-            combined_df.to_parquet(filename, engine="pyarrow", index=False)
-        else:
-            new_df.to_parquet(filename, engine="pyarrow", index=False)

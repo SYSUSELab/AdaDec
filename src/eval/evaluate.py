@@ -438,7 +438,7 @@ def load_deveval_dataset(file_path):
                 "namespace": data["namespace"],
                 "prompt": data["prompt"]
             })
-    return problems[500:] # 只取后面的数据，前面已经跑过了
+    return problems
 
 def extract_python_code_deveval(text):
     """
@@ -529,34 +529,85 @@ def extract_python_code_deveval(text):
     
     return '\n'.join(result_lines)
 
-def extract_function_body(code_string):
+def extract_last_function_body(code_str: str) -> str:
     """
-    从字符串中提取函数体内容，保持原有缩进，去掉尾部第一个无缩进行及其之后的所有行
+    提取代码字符串中最后一个 def 函数的函数体（基于 docstring 定位）。
+    - 假设每个函数一定有 docstring。
+    - 忽略 docstring，不包含在函数体中。
+    - 保留函数体原始缩进。
     """
-    # 匹配函数定义行（def 开头），然后匹配文档字符串（可选），最后匹配函数体
-    pattern = r'def\s+\w+\([^)]*\):\s*(?:\n\s*""".*?"""\s*)?(\n(?:\s{4,}.*\n?)*)'
-    
-    match = re.search(pattern, code_string, re.DOTALL)
-    
-    if match:
-        function_body = match.group(1)
-        # 去除开头的换行符，但保持内容的缩进
-        function_body = function_body.lstrip('\n').rstrip()
-        
-        # 去掉尾部第一个无缩进行及其之后的所有行内容
-        lines = function_body.split('\n')
-        result_lines = []
-        
-        for line in lines:
-            # 检查是否为无缩进行（非空行且不以空格开头）
-            if line and not line.startswith(' '):
-                # 遇到第一个无缩进行，停止添加
+    lines: List[str] = code_str.splitlines()
+    n = len(lines)
+
+    # 找到最后一个 def
+    def_start = None
+    for i in range(n - 1, -1, -1):
+        if re.match(r'^\s*def\s+', lines[i]):
+            def_start = i
+            break
+    if def_start is None:
+        return ""
+
+    # 找到函数体的第一个三引号 (""" 或 ''')
+    doc_start = None
+    doc_delim = None
+    for i in range(def_start, n):
+        stripped = lines[i].lstrip()
+        if stripped.startswith(('"""', "'''")):
+            doc_start = i
+            doc_delim = stripped[:3]
+            break
+    if doc_start is None:
+        return ""  # 没有 docstring
+
+    # 找到 docstring 结束行
+    doc_end = doc_start
+    if lines[doc_start].lstrip().count(doc_delim) >= 2:  
+        # 单行 docstring
+        pass
+    else:
+        doc_end += 1
+        while doc_end < n:
+            if doc_delim in lines[doc_end]:
                 break
-            result_lines.append(line)
-        
-        return '\n'.join(result_lines).rstrip()
-    
-    return None
+            doc_end += 1
+
+    # 函数体从 doc_end+1 行开始
+    body_start = doc_end + 1
+    if body_start >= n:
+        return ""
+
+    # 计算函数体缩进（第一个非空行的缩进）
+    def leading_indent_len(s: str) -> int:
+        m = re.match(r'^(\s*)', s)
+        return len(m.group(1).expandtabs(8)) if m else 0
+
+    first_nonempty = None
+    for i in range(body_start, n):
+        if lines[i].strip():
+            first_nonempty = i
+            break
+    if first_nonempty is None:
+        return ""
+
+    base_indent_len = leading_indent_len(lines[first_nonempty])
+
+    # 收集函数体
+    body_lines: List[str] = []
+    for i in range(first_nonempty, n):
+        line = lines[i]
+        if line.strip() and leading_indent_len(line) < base_indent_len:
+            break
+        body_lines.append(line)
+
+    # 去掉前后空行
+    while body_lines and not body_lines[0].strip():
+        body_lines.pop(0)
+    while body_lines and not body_lines[-1].strip():
+        body_lines.pop()
+
+    return "\n".join(body_lines)
+
 
 
 
@@ -906,7 +957,7 @@ def main():
         
         # ========== Step 2. 初始化模型 ==========
         model, tokenizer = MODEL_FACTORY[args.model]()
-        generator = Generator(
+        generator = Generator_DevEval(
             model=model,
             tokenizer=tokenizer,
             model_name=args.model,
@@ -949,9 +1000,9 @@ def main():
                 generated_code[i] = prompt + pred
 
             if isinstance(generated_code, list):
-                generated_code = [extract_function_body(pred) for pred in generated_code]
+                generated_code = [extract_last_function_body(pred) for pred in generated_code]
             else:
-                generated_code = [extract_function_body(generated_code)]
+                generated_code = [extract_last_function_body(generated_code)]
 
             for i, pred in enumerate(generated_code):
                 logging.info(f"##### PREDICTION-{i + 1} ######\n{pred}")
