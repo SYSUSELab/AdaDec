@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from codegeex.torch.inference import get_token_stream
+from typing import Optional
 
 
 def add_code_generation_args(parser):

@@ -14,9 +14,9 @@ mkdir -p "$OUTPUT_DIR"
 
 # List of models to iterate through
 MODELS=(
-    "deepseek-ai/deepseek-coder-1.3b-instruct"
-    "stabilityai/stable-code-instruct-3b"
-    "Qwen/Qwen3-0.6B"
+    # "deepseek-ai/deepseek-coder-1.3b-instruct"
+    # "stabilityai/stable-code-instruct-3b"
+    # "Qwen/Qwen3-0.6B"
     "Qwen/Qwen3-1.7B"
     "Qwen/Qwen3-4B"
     "Qwen/Qwen3-8B"
