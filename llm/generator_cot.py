@@ -442,7 +442,6 @@ class Generator_CoT:
                         m = re.match(r'^((?: {2}| {4}|\t))return', second_last)
                         is_second_last_return = bool(m)
 
-                    # 原来的 is_finished 逻辑，把新增条件一起或进去
                     is_finished[j] = (
                         not all_lines_valid
                         or is_consecutive_empty
@@ -503,11 +502,11 @@ class Generator_CoT:
         prompt_token_ids = prompt_token_ids.to(token_ids.device)
 
         # 以温度t采样k个样本（k个开头的token）
-        # sampled_scores, sampled_indices = self.k_sampling_function(
-            # next_token_logits, beam_scores, beam_size=lookahead_beam_size, temperature=0.4)
+        sampled_scores, sampled_indices = self.k_sampling_function(
+            next_token_logits, beam_scores, beam_size=lookahead_beam_size, temperature=0.4)
 
-        sampled_scores, sampled_indices = self.scoring_function(
-            next_token_logits, beam_scores, beam_size=lookahead_beam_size)
+        # sampled_scores, sampled_indices = self.scoring_function(
+            # next_token_logits, beam_scores, beam_size=lookahead_beam_size)
 
         current_sampled_scores = sampled_scores - history_topk_score
         token_indices = sampled_indices % next_token_logits.shape[-1]

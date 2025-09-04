@@ -95,8 +95,8 @@
 
 
 echo "开始运行评估任务..."
-Models=("deepseek-1.3b" "stable-3b" "qwen3-0.6b" "qwen3-1.7b" "deepseek-6.7b" "codellama-7b" "qwen3-4b" "qwen3-8b") # "deepseek-1.3b" "stable-3b" "qwen3-0.6b" "qwen3-1.7b" "deepseek-6.7b" "codellama-7b" "qwen3-4b" "qwen3-8b"
-Modes=("Traditional" "AdaFixL"  "AdaDynL")  # "Traditional" "AdaFixL"  "AdaDynL"
+Models=("qwen3-1.7b" "deepseek-6.7b" "codellama-7b" "qwen3-4b" "qwen3-8b") # "deepseek-1.3b" "stable-3b" "qwen3-0.6b" "qwen3-1.7b" "deepseek-6.7b" "codellama-7b" "qwen3-4b" "qwen3-8b"
+Modes=("Traditional" "AdaFixL")  # "Traditional" "AdaFixL"  "AdaDynL"
 
 echo "正在激活 adadec 环境..."
 conda activate adadec

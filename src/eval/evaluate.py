@@ -894,7 +894,7 @@ def main():
     
     elif args.dataset == 'deveval':
         # ========== Step 1. 加载数据集 ==========
-        problems = load_deveval_dataset('deveval_data.jsonl')
+        problems = load_deveval_dataset('deveval_filtered_data.jsonl')
 
         # print(problems[0]["prompt"])
         # return
