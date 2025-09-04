@@ -8,6 +8,48 @@ import re
 
 
 
+
+# few_shot_prompt = """
+# # RULE:
+# # When a line containing "# Thinking:" appears, the model must first continue that line by adding a brief "thinking comment" starting with "# Thinking:" on the same line, summarizing the upcoming code logic in one line, and then proceed to write the corresponding code line.
+# # The model must never generate "# Thinking:" on its own. Only when "# Thinking:" already exists in the input should it output a thinking comment line starting with "# Thinking:". Otherwise, just generate normal code.
+# # "Thinking comments" should always start at the beginning of the line with no indentation; code should retain normal indentation.
+# # Do not generate extra explanations or blank lines.
+
+
+# def factorial(n):
+#     \"\"\"
+#     Write a function to compute the factorial of a number.
+#     \"\"\"
+# # Thinking: Base case: factorial(0) = 1
+#     if n == 0:
+#         return 1
+# # Thinking: Recursive case: n * factorial(n-1)
+#     return n * factorial(n-1)
+
+# ---
+
+# def is_prime(n):
+#     \"\"\"
+#     Write a function to check if a number is prime.
+#     \"\"\"
+# # Thinking: A prime number is greater than 1
+#     if n < 2:
+#         return False
+# # Thinking: Check divisibility up to sqrt(n)
+#     for i in range(2, int(n**0.5) + 1):
+#         if n % i == 0:
+#             return False
+#     return True
+
+# ---
+
+# # CONTEXT
+
+# {}
+# # Thinking: 
+# """
+
 # -------------------------------
 # 函数一：构造 UnCert-CoT prompt
 # -------------------------------
@@ -16,22 +58,35 @@ def build_uncert_cot_prompt(context: str) -> str:
     给定当前上下文代码（context），构造触发 UnCert-CoT 的完整 prompt。
     """
     RULE = """RULE:
-1) When "# " appears in the input, the model must continue that line with exactly ONE short natural language comment (<= 10 words), all on the SAME line. Never write code after "# ".
-2) After finishing that one comment line, the NEXT line must be a single line of Python code that does not start with "# ".
-3) For each line of code, there can be at most ONE comment line immediately before it.
-4) Comments starting with "# " must never be multi-line. Each "# " line must be one line only.
-5) Do not generate decorative characters (e.g., "# # # #", "====", "***"). Only natural language comments are allowed.
+1) When "# Thinking:" appears in the input, the model must not wrap. The model must continue that line with exactly ONE short comment (<= 15 words), all on the SAME line, starting with "# Thinking:".
+2) After finishing that one comment line, the NEXT line must be a single line of code that does not start with "#".
+3) The model must never generate "# Thinking:" on its own. Only continue it when it already appears in the input.
+4) For each line of code, there can be at most ONE "# Thinking:" line immediately before it. Absolutely never generate more than one "# Thinking:" in a row.
+5) Thinking comments must always be one line only. Never break a thinking comment into multiple lines.
+6) If unsure, always write exactly ONE "# Thinking:" line followed by CODE lines.
 """
+# 7) Never output decorative characters such as "= = = =", "- - - -", "* * * *", or repeated symbols. Only valid Python code and "# Thinking:" comments are allowed.
 
     FEW_SHOT = """Here are some examples of how to complete functions following the RULE:
+
+def factorial(n):
+    \"\"\"
+    Compute factorial of a non-negative integer.
+    \"\"\"
+    # Thinking: Base case: factorial(0) = 1
+    if n == 0:
+        return 1
+    # Thinking: Recursive case: n * factorial(n-1)
+    return n * factorial(n-1)
+
 
 def reverse_words(s):
     \"\"\"
     Reverse the order of words in a string.
     \"\"\"
-    # Split string by spaces
+    # Thinking: Split string by spaces
     parts = s.split()
-    # Reverse the word list
+    # Thinking: Reverse the word list
     parts.reverse()
     return " ".join(parts)
 
@@ -40,27 +95,13 @@ def find_max(nums):
     \"\"\"
     Return the maximum value in a list.
     \"\"\"
-    # Initialize max with first element
+    # Thinking: Initialize max with first element
     maximum = nums[0]
-    # Update maximum while iterating
+    # Thinking: Update maximum while iterating
     for x in nums[1:]:
         if x > maximum:
             maximum = x
     return maximum
-
-
-def is_prime(n):
-    \"\"\"
-    Write a function to check if a number is prime.
-    \"\"\"
-    # THINKING: A prime number is greater than 1
-    if n < 2:
-        return False
-    # THINKING: Check divisibility up to sqrt(n)
-    for i in range(2, int(n**0.5) + 1):
-        if n % i == 0:
-            return False
-    return True
 """
 
     # 拼接完整 prompt
@@ -70,7 +111,7 @@ def is_prime(n):
         + FEW_SHOT
         + "\n\nHere is your code to complete:\n\n"
         + context
-        + "\n    # "
+        + "\n    # Thinking:"
     )
     return prompt
 
@@ -417,22 +458,20 @@ class Generator_CoT:
                     is_repeat_signal = "= = = = = = =" in lines[-1]
 
                     # 取出最后所有行里非空的那些
-                    last_non_empty = [ln for ln in lines if ln.strip() != ''][-8:]
+                    last_non_empty = [ln for ln in lines if ln.strip() != ''][-5:]
 
                     is_consecutive_empty = (
                         len(lines) >= 4 and
                         (
                             all(line.strip() == '' for line in lines[-4:]) or
-                            (len(last_non_empty) == 8 and
-                            all(ln.lstrip().startswith('# ') for ln in last_non_empty))
+                            (len(last_non_empty) == 5 and
+                            all(ln.lstrip().startswith('# Thinking') for ln in last_non_empty))
                         )
                     )
 
                     is_endswith_Human = lines and lines[-1].strip().endswith('Human')
-                    
-                    is_duplicate_signal = "# # # # #" in current_sequence
 
-                    all_lines_valid = all(line.startswith((' ', '\t')) for line in lines if line.strip())
+                    all_lines_valid = all(line.startswith((' ', '\t', '# Thinking:')) for line in lines if line.strip())
                     
                     # 新增：倒数第二行是否仅有一个缩进层级且以 return 开头
                     is_second_last_return = False
@@ -450,7 +489,6 @@ class Generator_CoT:
                         # or is_max_length_reached
                         or is_repeat_signal
                         or is_second_last_return
-                        or is_duplicate_signal
                     )
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
@@ -714,24 +752,16 @@ class Generator_CoT:
                     #     for line in lines
                     # )
                     
-                    is_duplicate_signal = "# # # # #" in current_sequence
-                    
                     ends_with_newline = current_sequence.endswith('\n')
-                    
-                    is_finished[j] = ends_with_newline or is_duplicate_signal
+
+                    is_finished[j] = ends_with_newline
 
                     # is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
-                
-            self.logging_gen += f"actual_lookahead_length_1:{actual_lookahead_length}\n"
             
             # 代码行
-            is_finished = [False] * beam_size
-            
-            actual_lookahead_length = 0
-            
-            for _ in range(512):  # 实际迭代次数由is_finished控制
+            for _ in range(99999999):  # 实际迭代次数由is_finished控制
                 if all(is_finished):
                     break
 
@@ -783,9 +813,9 @@ class Generator_CoT:
                 margins = new_margins
 
                 for j in range(beam_size):
-                    # if token_indices[j] == self.tokenizer.eos_token_id:
-                    #     is_finished[j] = True
-                    #     continue
+                    if token_indices[j] == self.tokenizer.eos_token_id:
+                        is_finished[j] = True
+                        continue
 
                     decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
                     # 截取 "# CONTEXT" 后的内容
@@ -794,32 +824,26 @@ class Generator_CoT:
                     context_part = context_part.replace("Here is your code to complete:", "", 1)
                     current_sequence = context_part[len(decoded_prompt):]
 
-                    # lines = current_sequence.split('\n')
+                    lines = current_sequence.split('\n')
 
-                    # is_consecutive_empty = (
-                    #     len(lines) >= 4 and
-                    #     all(line.strip() == '' for line in lines[-4:])
-                    # )
+                    is_consecutive_empty = (
+                        len(lines) >= 4 and
+                        all(line.strip() == '' for line in lines[-4:])
+                    )
 
-                    # all_lines_valid = all(
-                    #     not line or line.startswith((' ', '\t'))
-                    #     for line in lines
-                    # )
-                    
-                    is_duplicate_signal = "# # # # #" in current_sequence
+                    all_lines_valid = all(
+                        not line or line.startswith((' ', '\t'))
+                        for line in lines
+                    )
                     
                     ends_with_newline = current_sequence.endswith('\n')
-                    
-                    is_finished[j] = ends_with_newline or is_duplicate_signal
 
-                    # is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
+                    is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
 
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
                 
-            self.logging_gen += f"actual_lookahead_length_2:{actual_lookahead_length}\n"
-                
-        
+        self.logging_gen += f"actual_lookahead_length:{actual_lookahead_length}\n"
         
         # Find the best beam and compute its confidence as average margin
         best_beam = torch.argmax(lookahead_scores)

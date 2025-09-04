@@ -15,10 +15,11 @@ GPU_ID=$1
 # 设置GPU并运行
 export CUDA_VISIBLE_DEVICES=$GPU_ID
 
-python src/eval/evaluate.py \
+python src/eval/evaluate_cot.py \
     --model deepseek-1.3b \
     --decoding_mode AdaDynL \
-    --dataset deveval \
+    --lookahead_length 50 \
+    --dataset humaneval+ \
+    --entropy_threshold 0.25 \
     --logging_detail \
-    --lookahead_length 10 \
-    # --entropy_threshold 0.25 \
+    --lookahead_beam_size 5

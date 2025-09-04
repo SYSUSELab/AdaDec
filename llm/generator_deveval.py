@@ -270,16 +270,14 @@ class Generator_DevEval:
                     
                     lines = current_sequence.split('\n')
 
-                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
+                    is_consecutive_empty = len(lines) >= 15 and all(line.strip() == '' for line in lines[-15:])
 
-                    is_endswith_Human = lines and lines[-1].strip().endswith('Human')
+                    # is_endswith_Human = lines and lines[-1].strip().endswith('Human')
 
                     all_lines_valid = all(line.startswith((last_def_indent + ' ')) for line in lines if line.strip())
 
-                    is_finished[j] = not all_lines_valid or is_consecutive_empty or is_endswith_Human
+                    is_finished[j] = not all_lines_valid or is_consecutive_empty
                     
-                    is_oneline_empty = lines and lines[-1].strip() == ''
-
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
 
                 if logging_detail:

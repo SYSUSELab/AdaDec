@@ -14,6 +14,7 @@ import multiprocessing
 from typing import List
 from datasets import load_dataset
 import traceback
+from typing import Optional
 
 from tqdm import tqdm
 
@@ -438,175 +439,120 @@ def load_deveval_dataset(file_path):
                 "namespace": data["namespace"],
                 "prompt": data["prompt"]
             })
-    return problems[500:]  # 只评估500之后的部分
+    return problems
 
-def extract_python_code_deveval(text):
-    """
-    从字符串中提取Python代码块中的函数体内容
-    
-    Args:
-        text (str): 包含Python代码的字符串
-        
-    Returns:
-        str: 提取出的Python代码，保持原始缩进
-    """
-    # 查找Python代码块（用```python或```Python包围的部分）
-    code_block_pattern = r'```[Pp]ython\n(.*?)\n```'
-    matches = re.findall(code_block_pattern, text, re.DOTALL)
-    
-    if not matches:
-        return ""
-    
-    # 取第一个匹配的代码块
-    code_block = matches[0]
-    
-    # 按行分割代码
-    lines = code_block.split('\n')
-    
-    # 找到函数定义行的索引
-    def_line_index = -1
-    for i, line in enumerate(lines):
-        if line.strip().startswith('def '):
-            def_line_index = i
-            break
-    
-    if def_line_index == -1:
-        # 如果没有找到函数定义，返回整个代码块（去掉首尾空行）
-        result_lines = []
-        for line in lines:
-            if line.strip():  # 非空行
-                result_lines.append(line)
-        return '\n'.join(result_lines)
-    
-    # 从函数定义行之后开始处理
-    remaining_lines = lines[def_line_index + 1:]
-    
-    # 跳过文档字符串
-    in_docstring = False
-    docstring_quotes = None
-    start_index = 0
-    
-    for i, line in enumerate(remaining_lines):
-        stripped_line = line.strip()
-        
-        if not in_docstring:
-            # 检查是否是文档字符串的开始
-            if stripped_line.startswith('"""') or stripped_line.startswith("'''"):
-                in_docstring = True
-                docstring_quotes = stripped_line[:3]
-                # 检查是否在同一行结束
-                if stripped_line.count(docstring_quotes) >= 2:
-                    in_docstring = False
-                    start_index = i + 1
-                continue
-            elif stripped_line and not stripped_line.startswith('#'):
-                # 找到第一个非空非注释行，开始提取
-                start_index = i
-                break
-        else:
-            # 在文档字符串中，查找结束标记
-            if docstring_quotes in line:
-                in_docstring = False
-                start_index = i + 1
-    
-    # 提取函数体内容
-    function_body_lines = remaining_lines[start_index:]
-    
-    # 去掉末尾的空行
-    while function_body_lines and not function_body_lines[-1].strip():
-        function_body_lines.pop()
-    
-    # 如果没有函数体内容，返回空字符串
-    if not function_body_lines:
-        return ""
-    
-    # 直接保持原始缩进，不做调整
-    result_lines = function_body_lines
-    
-    # 去掉结尾的空行
-    while result_lines and not result_lines[-1].strip():
-        result_lines.pop()
-    
-    return '\n'.join(result_lines)
 
 def extract_last_function_body(code_str: str) -> str:
     """
-    提取代码字符串中最后一个 def 函数的函数体（基于 docstring 定位）。
-    - 假设每个函数一定有 docstring。
-    - 忽略 docstring，不包含在函数体中。
-    - 保留函数体原始缩进。
+    从 code_str 中定位 '# The code to be completed is:' 之后的第一个 def/async def，
+    提取该函数体（不含三引号文档字符串，不含函数外的代码）。
+    返回提取出的文本（保留原始缩进），若找不到则返回空字符串。
     """
-    lines: List[str] = code_str.splitlines()
-    n = len(lines)
-
-    # 找到最后一个 def
-    def_start = None
-    for i in range(n - 1, -1, -1):
-        if re.match(r'^\s*def\s+', lines[i]):
-            def_start = i
+    lines = code_str.splitlines()
+    # 找到标记行
+    marker_idx: Optional[int] = None
+    for i, ln in enumerate(lines):
+        if '# The code to be completed is:' in ln:
+            marker_idx = i
             break
-    if def_start is None:
+    if marker_idx is None:
         return ""
 
-    # 找到函数体的第一个三引号 (""" 或 ''')
-    doc_start = None
-    doc_delim = None
-    for i in range(def_start, n):
-        stripped = lines[i].lstrip()
-        if stripped.startswith(('"""', "'''")):
-            doc_start = i
-            doc_delim = stripped[:3]
+    # 在标记之后找到第一个 def 或 async def
+    def_idx: Optional[int] = None
+    def_pattern = re.compile(r'^\s*(async\s+def|def)\s')
+    for i in range(marker_idx + 1, len(lines)):
+        if def_pattern.match(lines[i]):
+            def_idx = i
             break
-    if doc_start is None:
-        return ""  # 没有 docstring
-
-    # 找到 docstring 结束行
-    doc_end = doc_start
-    if lines[doc_start].lstrip().count(doc_delim) >= 2:  
-        # 单行 docstring
-        pass
-    else:
-        doc_end += 1
-        while doc_end < n:
-            if doc_delim in lines[doc_end]:
-                break
-            doc_end += 1
-
-    # 函数体从 doc_end+1 行开始
-    body_start = doc_end + 1
-    if body_start >= n:
+    if def_idx is None:
         return ""
 
-    # 计算函数体缩进（第一个非空行的缩进）
-    def leading_indent_len(s: str) -> int:
-        m = re.match(r'^(\s*)', s)
-        return len(m.group(1).expandtabs(8)) if m else 0
+    # 计算 def 行的缩进长度（把 tab 视为 4 空格）
+    leading_ws = re.match(r'^(\s*)', lines[def_idx]).group(1)
+    def_indent = len(leading_ws.expandtabs(4))
 
-    first_nonempty = None
-    for i in range(body_start, n):
-        if lines[i].strip():
-            first_nonempty = i
+    # 找到函数头结束行（考虑括号匹配）
+    paren_balance = 0
+    header_end = None
+    for j in range(def_idx, len(lines)):
+        ln = lines[j]
+        # 简单地统计括号（假设函数签名内不会有未闭合字符串等极端情况）
+        paren_balance += ln.count('(') - ln.count(')')
+        # 当括号平衡并且该行以冒号结尾时，函数头结束
+        if paren_balance <= 0 and ln.rstrip().endswith(':'):
+            header_end = j
             break
-    if first_nonempty is None:
+    if header_end is None:
+        # 没找到冒号结尾，视作无效
         return ""
 
-    base_indent_len = leading_indent_len(lines[first_nonempty])
-
-    # 收集函数体
-    body_lines: List[str] = []
-    for i in range(first_nonempty, n):
-        line = lines[i]
-        if line.strip() and leading_indent_len(line) < base_indent_len:
+    # 函数体从 header_end + 1 开始
+    body_start = header_end + 1
+    # 跳过可能的空行，找到第一个非空行（如果没有非空行，则函数体为空）
+    first_body_line = None
+    for k in range(body_start, len(lines)):
+        if lines[k].strip() != "":
+            first_body_line = k
             break
-        body_lines.append(line)
+    if first_body_line is None:
+        return ""
 
-    # 去掉前后空行
-    while body_lines and not body_lines[0].strip():
-        body_lines.pop(0)
-    while body_lines and not body_lines[-1].strip():
-        body_lines.pop()
+    # 若第一个非空行的缩进不大于 def 的缩进，说明函数没有体
+    first_body_indent = len(re.match(r'^(\s*)', lines[first_body_line]).group(1).expandtabs(4))
+    if first_body_indent <= def_indent:
+        return ""
 
-    return "\n".join(body_lines)
+    # 检查是否为三引号文档字符串起始
+    triple_re = re.compile(r'^\s*(?:[rubfRUBF]{0,3})("""|\'\'\')')
+    m = triple_re.match(lines[first_body_line])
+    content_start = first_body_line
+    if m:
+        delim = m.group(1)
+        # 如果同一行包含结束分隔符（出现两次），则文档串在同一行结束
+        line_text = lines[first_body_line]
+        # 找起始 delim 的位置（考虑前缀），再搜索是否在该行还有第二个 delim（结束）
+        # 简化策略：如果当前行中 delim 出现次数 >= 2，则认为结束在同一行
+        if line_text.count(delim) >= 2:
+            content_start = first_body_line + 1
+        else:
+            # 向下寻找结束 delim
+            end_idx = None
+            for t in range(first_body_line + 1, len(lines)):
+                if delim in lines[t]:
+                    end_idx = t
+                    break
+            if end_idx is None:
+                # 文档串未闭合——把从 end 到 EOF 都视作文档串（返回空或剩余代码视情况）
+                return ""
+            content_start = end_idx + 1
+
+        # 找到 content_start 后，可能全是空行，继续下面逻辑
+
+    # 从 content_start 开始收集属于函数体的行
+    collected = []
+    for idx in range(content_start, len(lines)):
+        ln = lines[idx]
+        # 空行总是可以作为函数体的一部分
+        if ln.strip() == "":
+            collected.append(ln)
+            continue
+        # 计算此行缩进
+        indent = len(re.match(r'^(\s*)', ln).group(1).expandtabs(4))
+        # 如果缩进小于或等于 def 的缩进，说明函数体结束（遇到下一块代码）
+        if indent <= def_indent:
+            break
+        collected.append(ln)
+
+    # 去掉开头和结尾多余的空行（不改变内部相对缩进）
+    # 保持至少一行（如果 collected 全为空行，则返回空字符串）
+    while collected and collected[0].strip() == "":
+        collected.pop(0)
+    while collected and collected[-1].strip() == "":
+        collected.pop(-1)
+
+    return "\n".join(collected)
+
 
 
 
@@ -979,6 +925,7 @@ def main():
             prompt = problem["prompt"]
             if args.model.startswith('qwen3-'):
                 prompt = '/no_think\n' + prompt
+                # prompt = prompt + '\n    # /no_think'
 
             # Log problem details
             logging.info(f"##### TASK_ID: {task_id} ######")
@@ -995,6 +942,8 @@ def main():
                 lookahead_beam_size=args.lookahead_beam_size,
                 logging_detail=args.logging_detail
             )
+            
+            logging.info(f"##### ORIGIN_GENERATED_CODE ######\n{generated_code[0]}\n")
             
             for i, pred in enumerate(generated_code):
                 generated_code[i] = prompt + pred
