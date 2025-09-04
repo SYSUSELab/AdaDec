@@ -439,7 +439,7 @@ def load_deveval_dataset(file_path):
                 "namespace": data["namespace"],
                 "prompt": data["prompt"]
             })
-    return problems[:100]
+    return problems
 
 
 def extract_last_function_body(code_str: str) -> str:
