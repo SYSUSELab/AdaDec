@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from codegeex.torch.inference import get_token_stream
+import time
 
 
 def add_code_generation_args(parser):
@@ -397,6 +398,9 @@ def main():
     # Keep original generation logic
     bar = tqdm(total=len(prompts) * args.sample_n)
     with open(args.output_file, "w") as f:
+        
+        start_time = time.time()
+        
         for json in prompts:
             json['completion'] = []
             prompt = json['prompt']
@@ -455,6 +459,10 @@ def main():
                 else:
                     f.write(dumps(dict(task_id=json['task_id'], prompt=prompt, completion=truncate(generated_code), language='python')) + '\n')
                 bar.update(1)
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        f.write(f"Total time taken: {elapsed_time:.2f} seconds\n")
 
     bar.close()
 
