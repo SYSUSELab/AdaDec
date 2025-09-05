@@ -21,7 +21,7 @@ MODELS=(
     "Qwen/Qwen3-4B"
     "Qwen/Qwen3-8B"
     "deepseek-ai/deepseek-coder-6.7b-instruct"
-    "codellama/CodeLlama-7b-Python-hf"
+    # "codellama/CodeLlama-7b-Python-hf"
 )
 
 # Loop through each model
