@@ -5,12 +5,11 @@ from pathlib import Path
 from json import loads, dumps
 from tqdm import tqdm
 import copy
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaForCausalLM
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from codegeex.torch.inference import get_token_stream
-from typing import Optional
 
 
 def add_code_generation_args(parser):
@@ -374,12 +373,15 @@ def main():
 
     # Load model - replace CodeGeeX model loading with HF model loading
     print(f"Loading model {args.model_name} ...")
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True
-    )
+    if "CodeLlama" in args.model_name:
+        model = LlamaForCausalLM.from_pretrained(args.model_name, torch_dtype=torch.float16, device_map="auto")
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True
+        )
     model.eval()
 
     # Optional quantization (you might need to install bitsandbytes)
