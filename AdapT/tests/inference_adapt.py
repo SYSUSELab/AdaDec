@@ -445,13 +445,13 @@ def main():
                 
                 # Replace tokenizer.decode_code with standard decode
                 generated_code = tokenizer.decode(generated_tokens_[n_token_prompt:], skip_special_tokens=True)
-                
+                original_code = tokenizer.decode(generated_tokens_, skip_special_tokens=True)
                 
                 if STOP_REGEX.match(generated_code) and "deveval" not in args.prompt_file:
                     generated_code = STOP_REGEX.match(generated_code).group(1)
                 
                 if "deveval" in args.prompt_file:
-                    f.write(dumps(dict(namespace=json['namespace'], completion=extract_last_function_body(prompt + '\n' + generated_code))) + '\n')
+                    f.write(dumps(dict(namespace=json['namespace'], completion=extract_last_function_body(prompt + '\n' + generated_code), original_code=original_code)) + '\n')
                 else:
                     f.write(dumps(dict(task_id=json['task_id'], prompt=prompt, completion=truncate(generated_code), language='python')) + '\n')
                 bar.update(1)
