@@ -29,7 +29,7 @@ def prompt_line_stats(input_file, max_lines):
 
 if __name__ == "__main__":
     input_path = "deveval_data.jsonl"
-    max_allowed_lines = 1000
+    max_allowed_lines = 200
 
     percent = prompt_line_stats(input_path, max_allowed_lines)
     print(f"prompt 行数超过 {max_allowed_lines} 的占比: {percent:.2f}%")

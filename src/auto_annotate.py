@@ -98,6 +98,116 @@ def find_divergence(tree1: ast.AST, tree2: ast.AST
                 return (node1.lineno, node2.lineno)
     return None
 
+def normalize_line_for_comparison(line: str) -> str:
+    """
+    Normalize a line by removing variable names and other irrelevant differences.
+    """
+    # Remove leading/trailing whitespace but preserve structure
+    stripped = line.strip()
+    if not stripped:
+        return ""
+    
+    # Replace identifiers with placeholders to ignore variable name differences
+    # This is a simplified approach - could be enhanced with AST parsing for better accuracy
+    import re
+    
+    # Replace string literals with placeholder
+    normalized = re.sub(r'["\'].*?["\']', 'STR', stripped)
+    
+    # Replace numbers with placeholder
+    normalized = re.sub(r'\b\d+\.?\d*\b', 'NUM', normalized)
+    
+    # Replace identifiers (variable names) with placeholder, but keep keywords
+    keywords = {
+        'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 
+        'finally', 'with', 'return', 'yield', 'import', 'from', 'as', 'pass',
+        'break', 'continue', 'and', 'or', 'not', 'in', 'is', 'None', 'True', 
+        'False', 'lambda', 'global', 'nonlocal', 'assert', 'del', 'raise'
+    }
+    
+    tokens = re.findall(r'\b\w+\b|[^\w\s]', normalized)
+    normalized_tokens = []
+    
+    for token in tokens:
+        if token.isalpha() and token not in keywords:
+            normalized_tokens.append('ID')
+        else:
+            normalized_tokens.append(token)
+    
+    return ''.join(normalized_tokens)
+
+def get_common_indent(line1: str, line2: str) -> int:
+    """
+    Get the common indentation level of two lines.
+    """
+    indent1 = len(line1) - len(line1.lstrip())
+    indent2 = len(line2) - len(line2.lstrip())
+    return min(indent1, indent2)
+
+def is_divergence_at_line_start(lineA: str, lineB: str) -> bool:
+    """
+    Check if the divergence occurs at the beginning of the line by:
+    1. Removing common indentation
+    2. Normalizing variable names and literals
+    3. Comparing the semantic structure
+    """
+    if lineA == "<Out of bounds>" or lineB == "<Out of bounds>":
+        return False
+    
+    # Get common indentation and remove it
+    common_indent = get_common_indent(lineA, lineB)
+    lineA_dedented = lineA[common_indent:] if common_indent < len(lineA) else lineA.lstrip()
+    lineB_dedented = lineB[common_indent:] if common_indent < len(lineB) else lineB.lstrip()
+    
+    # Check if one line starts with whitespace and the other doesn't (indentation difference)
+    lineA_first_char = lineA_dedented[0] if lineA_dedented else ''
+    lineB_first_char = lineB_dedented[0] if lineB_dedented else ''
+    
+    lineA_starts_with_space = lineA_first_char in [' ', '\t']
+    lineB_starts_with_space = lineB_first_char in [' ', '\t']
+    
+    # If one starts with indentation and other doesn't, it's a line start divergence
+    if lineA_starts_with_space != lineB_starts_with_space:
+        return True
+    
+    # If both are indented or both are not indented, check semantic difference
+    # Get the first word/token of each line
+    import re
+    
+    lineA_tokens = re.findall(r'\S+', lineA_dedented)
+    lineB_tokens = re.findall(r'\S+', lineB_dedented)
+    
+    if not lineA_tokens or not lineB_tokens:
+        return lineA_dedented.strip() != lineB_dedented.strip()
+    
+    # Normalize both lines and compare
+    normalized_A = normalize_line_for_comparison(lineA_dedented)
+    normalized_B = normalize_line_for_comparison(lineB_dedented)
+    
+    # If normalized versions are different, check if it's a structural difference
+    # (like different keywords/operators) vs just variable name differences
+    if normalized_A != normalized_B:
+        # Get first tokens
+        first_token_A = lineA_tokens[0]
+        first_token_B = lineB_tokens[0]
+        
+        # Keywords and operators that indicate structural differences
+        structural_tokens = {
+            'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'try', 'except',
+            'finally', 'with', 'return', 'yield', 'import', 'from', 'pass',
+            'break', 'continue', 'assert', 'del', 'raise', '=', '+=', '-=', '*=', '/='
+        }
+        
+        # If first tokens are both structural and different, it's a line start divergence
+        if (first_token_A in structural_tokens or first_token_B in structural_tokens):
+            return first_token_A != first_token_B
+        
+        # Otherwise, it might just be variable name differences
+        # Check if the overall structure is the same
+        return normalized_A != normalized_B
+    
+    return False
+
 def extract_all_code_pairs_with_filter(logfile: str):
     with open(logfile, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -180,6 +290,10 @@ if __name__ == "__main__":
     print(f"Extracted {len(code_pairs)} pairs of code segments")
 
     output_path = "data/divergence_report.txt"
+    
+    # Statistics for divergence at line start
+    total_divergences = 0
+    divergences_at_line_start = 0
 
     with open(output_path, 'w', encoding='utf-8') as fout:
         for idx, (task_id, codeA, codeB) in enumerate(code_pairs):
@@ -190,12 +304,51 @@ if __name__ == "__main__":
                 t2 = normalize(codeB)
                 diff = find_divergence(t1, t2)
 
-                lineA = codeA.splitlines()[diff[0]-1] if 0 < diff[0] <= len(codeA.splitlines()) else "<Out of bounds>"
-                lineB = codeB.splitlines()[diff[1]-1] if 0 < diff[1] <= len(codeB.splitlines()) else "<Out of bounds>"
+                if diff and diff[0] is not None and diff[1] is not None:
+                    total_divergences += 1
+                    
+                    codeA_lines = codeA.splitlines()
+                    codeB_lines = codeB.splitlines()
+                    
+                    lineA = codeA_lines[diff[0]-1] if 0 < diff[0] <= len(codeA_lines) else "<Out of bounds>"
+                    lineB = codeB_lines[diff[1]-1] if 0 < diff[1] <= len(codeB_lines) else "<Out of bounds>"
 
-                fout.write(f"The divergence occurs at the line: {diff}\n")
-                fout.write(f"Code A divergence line content: {lineA}\n")
-                fout.write(f"Code B divergence line content: {lineB}\n")
+                    fout.write(f"The divergence occurs at the line: {diff}\n")
+                    fout.write(f"Code A divergence line content: {lineA}\n")
+                    fout.write(f"Code B divergence line content: {lineB}\n")
+                    
+                    # Check if divergence is at line start
+                    is_at_start = is_divergence_at_line_start(lineA, lineB)
+                    
+                    if is_at_start:
+                        divergences_at_line_start += 1
+                        fout.write("Divergence occurs at line start: YES\n")
+                    else:
+                        fout.write("Divergence occurs at line start: NO\n")
+                else:
+                    fout.write("No divergence found\n")
 
             except Exception as e:
                 fout.write("Analysis failed, error message: {}\n".format(str(e)))
+
+        # Write summary statistics
+        fout.write(f"\n\n=== SUMMARY ===\n")
+        fout.write(f"Total divergences analyzed: {total_divergences}\n")
+        fout.write(f"Divergences at line start: {divergences_at_line_start}\n")
+        
+        if total_divergences > 0:
+            percentage = (divergences_at_line_start / total_divergences) * 100
+            fout.write(f"Percentage of divergences at line start: {percentage:.2f}%\n")
+        else:
+            fout.write("No divergences found to calculate percentage\n")
+
+    # Also print summary to console
+    print(f"\nSUMMARY:")
+    print(f"Total divergences analyzed: {total_divergences}")
+    print(f"Divergences at line start: {divergences_at_line_start}")
+    
+    if total_divergences > 0:
+        percentage = (divergences_at_line_start / total_divergences) * 100
+        print(f"Percentage of divergences at line start: {percentage:.2f}%")
+    else:
+        print("No divergences found to calculate percentage")

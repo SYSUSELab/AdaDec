@@ -3,226 +3,277 @@
 The divergence occurs at the line: (17, 16)
 Code A divergence line content:     for c in paren_string:
 Code B divergence line content:     temp = ""
+Divergence occurs at line start: YES
 
 === HumanEval/9 ===
 The divergence occurs at the line: (11, 11)
 Code A divergence line content:     running_max = None
 Code B divergence line content:     max_num = numbers[0]
+Divergence occurs at line start: YES
 
 === HumanEval/19 ===
 The divergence occurs at the line: (24, 24)
 Code A divergence line content:     return ' '.join(sorted([x for x in numbers.split(' ') if x], key=lambda x: value_map[x]))
 Code B divergence line content:     return ' '.join(sorted(numbers.split(' '), key=lambda x: num_dict[x]))
+Divergence occurs at line start: NO
 
 === HumanEval/26 ===
 The divergence occurs at the line: (13, 12)
 Code A divergence line content:     return [n for n in numbers if c[n] <= 1]
 Code B divergence line content:     for number in numbers:
+Divergence occurs at line start: YES
 
 === HumanEval/32 ===
 The divergence occurs at the line: (25, 25)
 Code A divergence line content:     begin, end = -1., 1.
 Code B divergence line content:     if len(xs) % 2 == 1:
+Divergence occurs at line start: YES
 
 === HumanEval/39 ===
 The divergence occurs at the line: (20, 18)
 Code A divergence line content:     def is_prime(p):
 Code B divergence line content:     if n < 1:
+Divergence occurs at line start: YES
 
 === HumanEval/43 ===
 The divergence occurs at the line: (20, 20)
 Code A divergence line content:     for i, l1 in enumerate(l):
 Code B divergence line content:     num_set = set(l)
+Divergence occurs at line start: YES
 
 === HumanEval/54 ===
-Analysis failed, error message: 'NoneType' object is not subscriptable
+No divergence found
 
 === HumanEval/64 ===
 The divergence occurs at the line: (21, 21)
 Code A divergence line content:     if s[-1] == 'y' or s[-1] == 'Y':
 Code B divergence line content:     for letter in s:
+Divergence occurs at line start: YES
 
 === HumanEval/65 ===
 The divergence occurs at the line: (13, 13)
 Code A divergence line content:     if shift > len(s):
 Code B divergence line content:     if shift >= len(digits):
+Divergence occurs at line start: NO
 
 === HumanEval/67 ===
 The divergence occurs at the line: (17, 18)
 Code A divergence line content:     for i in s.split(' '):
 Code B divergence line content:     apples = int(s[0])
+Divergence occurs at line start: YES
 
 === HumanEval/75 ===
 The divergence occurs at the line: (17, 18)
 Code A divergence line content:     for i in range(2,101):
 Code B divergence line content:     factors = []
+Divergence occurs at line start: YES
 
 === HumanEval/76 ===
 The divergence occurs at the line: (18, 18)
 Code A divergence line content:     while (power < x): 
 Code B divergence line content:     while i <= x:
+Divergence occurs at line start: NO
 
 === HumanEval/77 ===
 The divergence occurs at the line: (17, 17)
 Code A divergence line content:     return int(round(a ** (1. / 3))) ** 3 == a
 Code B divergence line content:     return x * x * x == a or (x + 1) * (x + 1) * (x + 1) == a or (x - 1) * (x - 1) * (x - 1) == a
+Divergence occurs at line start: NO
 
 === HumanEval/81 ===
 The divergence occurs at the line: (31, 29)
 Code A divergence line content:     for gpa in grades:
 Code B divergence line content:     return [grades_dict[min(grades_dict.keys(), key=lambda x:abs(x-y))] for y in grades]
+Divergence occurs at line start: YES
 
 === HumanEval/83 ===
 The divergence occurs at the line: (8, 8)
 Code A divergence line content:     if n == 1: return 1
 Code B divergence line content:     return 2 * (n - 1)
+Divergence occurs at line start: YES
 
 === HumanEval/84 ===
 The divergence occurs at the line: (17, 18)
 Code A divergence line content:     return bin(sum(int(i) for i in str(N)))[2:]
 Code B divergence line content:     binary = bin(N)[2:]
+Divergence occurs at line start: YES
 
 === HumanEval/90 ===
 The divergence occurs at the line: (14, 14)
 Code A divergence line content:     lst = sorted(set(lst))
 Code B divergence line content:     if len(lst) < 2:
+Divergence occurs at line start: YES
 
 === HumanEval/91 ===
 The divergence occurs at the line: (16, 15)
 Code A divergence line content:     sentences = re.split(r'[.?!]\s*', S)
 Code B divergence line content:     sentences = re.split('[.?!]', S)
+Divergence occurs at line start: NO
 
 === HumanEval/93 ===
 The divergence occurs at the line: (19, 19)
 Code A divergence line content:     message = message.swapcase()
 Code B divergence line content:     for char in message:
+Divergence occurs at line start: YES
 
 === HumanEval/99 ===
 The divergence occurs at the line: (23, 21)
 Code A divergence line content:     if value.count('.') == 1:
 Code B divergence line content:     return round(float(value))
+Divergence occurs at line start: YES
 
 === HumanEval/105 ===
 The divergence occurs at the line: (37, 27)
 Code A divergence line content:     new_arr = []
 Code B divergence line content:     arr.sort(reverse=True)
+Divergence occurs at line start: YES
 
 === HumanEval/108 ===
 The divergence occurs at the line: (13, 13)
 Code A divergence line content:     def digits_sum(n):
 Code B divergence line content:     count = 0
+Divergence occurs at line start: YES
 
 === HumanEval/109 ===
 The divergence occurs at the line: (30, 31)
 Code A divergence line content:     if len(arr)==0:
 Code B divergence line content:     for i in range(len(arr)):
+Divergence occurs at line start: YES
 
 === HumanEval/111 ===
 The divergence occurs at the line: (17, 18)
 Code A divergence line content:     list1=test.split(" ")
 Code B divergence line content:     for letter in test.split():
+Divergence occurs at line start: YES
 
 === HumanEval/113 ===
 The divergence occurs at the line: (15, 15)
 Code A divergence line content:     res = []
 Code B divergence line content:     def count_odd(s):
+Divergence occurs at line start: YES
 
 === HumanEval/115 ===
 The divergence occurs at the line: (38, 39)
 Code A divergence line content:     return sum([math.ceil(sum(arr)/capacity) for arr in grid])
 Code B divergence line content:     count = 0
+Divergence occurs at line start: YES
 
 === HumanEval/119 ===
 The divergence occurs at the line: (18, 18)
 Code A divergence line content:     def check(s):
 Code B divergence line content:     s1, s2 = lst
+Divergence occurs at line start: YES
 
 === HumanEval/120 ===
 The divergence occurs at the line: (28, 28)
 Code A divergence line content:     if k == 0:
 Code B divergence line content:     pass
+Divergence occurs at line start: YES
 
 === HumanEval/126 ===
 The divergence occurs at the line: (19, 19)
 Code A divergence line content:     count_digit = dict([(i, 0) for i in lst])
 Code B divergence line content:     return lst == sorted(lst)
+Divergence occurs at line start: YES
 
 === HumanEval/127 ===
 The divergence occurs at the line: (23, 24)
 Code A divergence line content:     def is_prime(num):
 Code B divergence line content:     start = max(interval1[0], interval2[0])
+Divergence occurs at line start: YES
 
 === HumanEval/129 ===
 The divergence occurs at the line: (33, 34)
 Code A divergence line content:     n = len(grid)
 Code B divergence line content:     pass
+Divergence occurs at line start: YES
 
 === HumanEval/130 ===
 The divergence occurs at the line: (22, 2)
 Code A divergence line content:     my_tri = [1, 3]
 Code B divergence line content: def tri(n):
+Divergence occurs at line start: YES
 
 === HumanEval/131 ===
 The divergence occurs at the line: (12, 12)
 Code A divergence line content:     odd_count = 0
 Code B divergence line content:     for digit in str(n):
+Divergence occurs at line start: YES
 
 === HumanEval/132 ===
 The divergence occurs at the line: (17, 17)
 Code A divergence line content:     closing_bracket_index = []
 Code B divergence line content:     for bracket in string:
+Divergence occurs at line start: YES
 
 === HumanEval/134 ===
 The divergence occurs at the line: (17, 16)
 Code A divergence line content:     check = txt.split(' ')[-1]
 Code B divergence line content:     if txt:
+Divergence occurs at line start: YES
 
 === HumanEval/137 ===
 The divergence occurs at the line: (15, 15)
 Code A divergence line content:     temp_a, temp_b = a, b
 Code B divergence line content:     if isinstance(a, str):
+Divergence occurs at line start: YES
 
 === HumanEval/138 ===
 The divergence occurs at the line: (10, 11)
 Code A divergence line content:     return n%2 == 0 and n >= 8
 Code B divergence line content:     if n < 10:
+Divergence occurs at line start: YES
 
 === HumanEval/139 ===
 The divergence occurs at the line: (15, 15)
 Code A divergence line content:     fact_i = 1
 Code B divergence line content:     if n == 0:
+Divergence occurs at line start: YES
 
 === HumanEval/144 ===
 The divergence occurs at the line: (17, 17)
 Code A divergence line content:     numerator = int(a) * int(c)
 Code B divergence line content:     return (x_num * n_den) % (x_den * n_num) == 0
+Divergence occurs at line start: YES
 
 === HumanEval/145 ===
 The divergence occurs at the line: (14, 14)
 Code A divergence line content:     def digits_sum(n):
 Code B divergence line content:     return sorted(nums, key=lambda x: (sum(map(int, str(abs(x)))), nums.index(x)))
+Divergence occurs at line start: YES
 
 === HumanEval/149 ===
 The divergence occurs at the line: (18, 18)
 Code A divergence line content:     lst.sort()
 Code B divergence line content:     lst = [i for i in lst if len(i) % 2 == 0]
+Divergence occurs at line start: YES
 
 === HumanEval/151 ===
 The divergence occurs at the line: (15, 15)
 Code A divergence line content:     return sum([i**2 for i in lst if i > 0 and i%2!=0 and "." not in str(i)])
 Code B divergence line content:     sum = 0
+Divergence occurs at line start: YES
 
 === HumanEval/160 ===
 The divergence occurs at the line: (28, 29)
 Code A divergence line content:     expression = str(operand[0])
 Code B divergence line content:     result = operand[0]
+Divergence occurs at line start: YES
 
 === HumanEval/162 ===
 The divergence occurs at the line: (11, 10)
 Code A divergence line content:     return hashlib.md5(text.encode('ascii')).hexdigest() if text else None
 Code B divergence line content:     if text == "":
+Divergence occurs at line start: YES
 
 === HumanEval/163 ===
 The divergence occurs at the line: (13, 13)
 Code A divergence line content:     lower = max(2, min(a, b))
 Code B divergence line content:     if a > b:
+Divergence occurs at line start: YES
+
+
+=== SUMMARY ===
+Total divergences analyzed: 45+1
+Divergences at line start: 40
+Percentage of divergences at line start: 86.96%

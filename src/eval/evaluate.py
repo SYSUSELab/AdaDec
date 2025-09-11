@@ -583,7 +583,7 @@ def main():
     if args.beam > 1:
         filename = f"experiments/{args.dataset}_outputs/{args.model}/beamsearch_{args.beam}/{args.model}"
     else:
-        filename = f"experiments/{args.dataset}_outputs/{args.model}/{args.decoding_mode}/{args.model}"
+        filename = f"experiments/{args.dataset}_outputs_entropy1.2/{args.model}/{args.decoding_mode}/{args.model}"
     
     init_log(f"{filename}.log")
 

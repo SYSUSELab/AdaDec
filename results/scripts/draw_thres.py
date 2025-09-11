@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 model_list = {'deepseek-1.3b': 'DS-1.3B', 'deepseek-6.7b': 'DS-6.7B', 
-              'stable-3b': 'ST-3B', 'codellama-7b': 'CL-7B', 
+              'stable-3b': 'ST-3B', # 'codellama-7b': 'CL-7B', 
               'qwen3-0.6b': 'QW-0.6B', 'qwen3-1.7b': 'QW-1.7B', 'qwen3-4b': 'QW-4B', 'qwen3-8b': 'QW-8B'}
 
 # Generate 10 entropy thresholds from 0.6 to 1.5 with step 0.1
@@ -49,41 +49,54 @@ results_df = pd.DataFrame(results)
 #         print(f"  Rank (Entropy > 1.0): {row['Rank_ge']:.2f}")
 #         print("-" * 40)
 
-# Plot 1
-plt.figure(figsize=(10, 6))
-for model, MD in model_list.items():
-    model_data = results_df[results_df['model'] == MD]
-    plt.plot(model_data['threshold'], model_data['Percentile'], marker='o', label=MD)
-plt.xlabel('Entropy Threshold', fontsize=14)
-plt.ylabel('Percentage of Decoding Steps (Entropy > Threshold)', fontsize=14)
-plt.xticks(fontsize=12)
-plt.yticks(fontsize=12)
-plt.legend()
-plt.grid(True)
-plt.savefig('results/outputs/thres_tok_pct.pdf')
 
-from cycler import cycler
+# ========== 图1：百分比曲线 ==========
+plt.figure(figsize=(10, 9))
 
-num_models = len(model_list)
-cmap = plt.get_cmap('tab20')
-colors = [cmap(i) for i in range(num_models)]
-
-plt.figure(figsize=(10, 6))
-ax = plt.gca()
-ax.set_prop_cycle(cycler('color', colors))
+# 用 tab10（学术常用配色，颜色少但清晰）
+cmap = plt.get_cmap('tab10')
+colors = [cmap(i) for i in range(len(model_list))]
 
 for i, (model, MD) in enumerate(model_list.items()):
     model_data = results_df[results_df['model'] == MD]
-    color = colors[i]
-    plt.plot(model_data['threshold'], model_data['Rank_lt'], marker='o', linestyle='-', color=color, label=f'{MD} Rank (<= Threshold)')
-    plt.plot(model_data['threshold'], model_data['Rank_ge'], marker='x', linestyle='--', color=color, label=f'{MD} Rank (> Threshold)')
+    plt.plot(model_data['threshold'], model_data['Percentile'], 
+             marker='o', color=colors[i], label=MD, linewidth=2)
 
-plt.xlabel('Entropy Threshold', fontsize=15)
-plt.ylabel('Average Rank of Ground-truth Tokens', fontsize=15)
-plt.legend(loc='upper left', fontsize=10.5, ncol=2)
-plt.xticks(fontsize=13)
-plt.yticks(fontsize=13)
-plt.grid(True)
+plt.xlabel('Entropy Threshold', fontsize=22)
+plt.ylabel('Percentage of Decoding Steps (Entropy > Threshold)', fontsize=22)
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=20)
+plt.legend(fontsize=17.5, frameon=False)  # 去掉图例边框，更简洁
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.tight_layout()
+plt.savefig('results/outputs/1thres_tok_pct.pdf')
+
+# ========== 图2：Rank 对比曲线 ==========
+plt.figure(figsize=(10, 9))
+
+cmap = plt.get_cmap('tab10')
+colors = [cmap(i) for i in range(len(model_list))]
+
+for i, (model, MD) in enumerate(model_list.items()):
+    model_data = results_df[results_df['model'] == MD]
+    base_color = colors[i]
+    
+    # Rank <= 阈值：实线 + 圆点
+    plt.plot(model_data['threshold'], model_data['Rank_lt'], 
+             marker='o', linestyle='-', color=base_color, linewidth=2,
+             label=f'{MD} (≤ Threshold)')
+    
+    # Rank > 阈值：虚线 + 叉号
+    plt.plot(model_data['threshold'], model_data['Rank_ge'], 
+             marker='x', linestyle='--', color=base_color, linewidth=2,
+             label=f'{MD} (> Threshold)')
+
+plt.xlabel('Entropy Threshold', fontsize=22)
+plt.ylabel('Average Rank of Ground-truth Tokens', fontsize=22)
+plt.legend(loc='upper left', fontsize=16, ncol=2, frameon=False)
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=20)
+plt.grid(True, linestyle='--', alpha=0.6)
 plt.ylim(top=results_df[['Rank_lt', 'Rank_ge']].max().max() * 1.25)
 plt.tight_layout()
-plt.savefig('results/outputs/thres_avg_rank.pdf')
+plt.savefig('results/outputs/1thres_avg_rank.pdf')

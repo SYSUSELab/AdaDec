@@ -286,8 +286,7 @@ class Generator:
             for seq in token_ids
         ]
         
-        if logging_detail:
-            logging.info(f"Total tradition_times:{self.tradition_times}\n Total lookahead_times:{self.lookahead_times}\n")
+        logging.info(f"Total tradition_times:{self.tradition_times}\n Total lookahead_times:{self.lookahead_times}\n")
 
         torch.cuda.empty_cache()
 
