@@ -2,7 +2,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 model_name_list = [
-    'deepseek-1.3b', 'deepseek-6.7b', 'stable-3b', 'codellama-7b',
+    'deepseek-1.3b', 'deepseek-6.7b', 'stable-3b',
     'qwen3-0.6b', 'qwen3-1.7b', 'qwen3-4b', 'qwen3-8b'
 ]
 

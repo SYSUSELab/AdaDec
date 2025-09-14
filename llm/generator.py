@@ -14,7 +14,7 @@ class Generator:
             tokenizer: PreTrainedTokenizerBase,
             model_name: str,
             beam_size: int = 3,
-            decoding_mode: str = 'Traditional',     # Traditional or AdaFixL or AdaDynL
+            decoding_mode: str = 'Traditional',     # Traditional or AdaFixL
             entropy_threshold='Learned'             # 'Learned' or a number
     ):
         self.model = model
@@ -31,7 +31,7 @@ class Generator:
         self.entropy_threshold = None
         if decoding_mode == 'Traditional':
             self.entropy_threshold = float('inf')
-        elif decoding_mode == 'AdaFixL' or decoding_mode == 'AdaDynL':
+        elif decoding_mode == 'AdaFixL':
             if entropy_threshold == 'Learned':
                 self.entropy_threshold = self._load_learned_threshold("data/learned_thresholds.json")
             else:
@@ -40,7 +40,7 @@ class Generator:
                 except ValueError:
                     raise ValueError("Entropy threshold must be a number or 'Learned'")
         else:
-            raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
+            raise ValueError(f"Unsupported decoding_mode: expected 'AdaFixL' , got '{self.decoding_mode}'")
 
 
     def _load_learned_threshold(self, threshold_file) -> float:
@@ -62,7 +62,7 @@ class Generator:
 
     def select_top_beam_scores(self, beam_size, topk_scores, topk_indices, mode):
         
-        if mode == 'AdaDynL' or mode == 'Traditional':
+        if mode == 'Traditional':
             if isinstance(topk_scores, list):
                 topk_scores = torch.cat(topk_scores, dim=0)
                 topk_indices = torch.cat(topk_indices, dim=0)
@@ -113,29 +113,18 @@ class Generator:
            raise ValueError(f"Unsupported decoding_mode: got {self.decoding_mode}")
 
     def scoring_function(self, next_token_logits, beam_scores, beam_size):
+        log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)  # [batch, vocab]
+        topk_scores, topk_indices = torch.topk(log_probs, beam_size, dim=-1)    # [batch, beam_size]
 
-        if self.decoding_mode == 'AdaDynL':
-            next_token_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1).squeeze(0)
-            topk_scores, topk_indices = torch.topk(next_token_probs, beam_size)
-            topk_scores += beam_scores.item()
-            return topk_scores, topk_indices
-        
-        elif self.decoding_mode == 'AdaFixL' or self.decoding_mode == 'Traditional':
-            log_probs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)  # [batch, vocab]
-            topk_scores, topk_indices = torch.topk(log_probs, beam_size, dim=-1)    # [batch, beam_size]
+        if beam_scores.dim() == 1:
+            beam_scores = beam_scores.unsqueeze(1).expand(-1, beam_size)
 
-            if beam_scores.dim() == 1:
-                beam_scores = beam_scores.unsqueeze(1).expand(-1, beam_size)
+        topk_scores = topk_scores + beam_scores
 
-            topk_scores = topk_scores + beam_scores
+        topk_scores = topk_scores.view(-1)
+        topk_indices = topk_indices.view(-1)
 
-            topk_scores = topk_scores.view(-1)
-            topk_indices = topk_indices.view(-1)
-
-            return topk_scores, topk_indices
-        
-        else:
-           raise ValueError(f"Unsupported decoding_mode: {self.decoding_mode}")
+        return topk_scores, topk_indices
     
     def generate(
             self,
@@ -308,37 +297,19 @@ class Generator:
         token_ids = token_ids.repeat(lookahead_beam_size, 1)
         token_ids = torch.cat([token_ids, token_indices.unsqueeze(-1)], dim=-1)
 
-        if self.decoding_mode == 'AdaFixL':
-            lookahead_scores, actual_lengths = self.get_lookahead_score_fixL(
-                token_ids=token_ids,
-                lookahead_length=lookahead_length,
-                decoded_prompt=decoded_prompt
-            )
-            total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
+        lookahead_scores, actual_lengths = self.get_lookahead_score(
+            token_ids=token_ids,
+            lookahead_length=lookahead_length,
+            decoded_prompt=decoded_prompt
+        )
+        total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
 
-            topk_scores, topk_indices_temp = torch.topk(total_scores, beam_size)
-            topk_indices = topk_indices[topk_indices_temp]
+        topk_scores, topk_indices_temp = torch.topk(total_scores, beam_size)
+        topk_indices = topk_indices[topk_indices_temp]
 
-            return topk_scores, topk_indices
-        elif self.decoding_mode == 'AdaDynL':
-            for i in range(lookahead_beam_size):
-                lookahead_score, actual_length = self.get_lookahead_score_DynL(
-                    token_ids=token_ids[i].unsqueeze(0).to(self.model.device),
-                    lookahead_length=lookahead_length,
-                    decoded_prompt=decoded_prompt
-                )
-                topk_scores[i] = history_topk_score + (current_topk_scores[i] + lookahead_score) / (actual_length + 1) * lambda_value
+        return topk_scores, topk_indices
 
-            topk_scores, topk_indices_temp = torch.topk(topk_scores, beam_size)
-            topk_indices = topk_indices[topk_indices_temp]
-
-            return topk_scores, topk_indices
-        
-        else:
-           raise ValueError(f"Unsupported decoding_mode: expected AdaFixL or AdaDynL, got {self.decoding_mode}")
-
-
-    def get_lookahead_score_fixL(self, token_ids, lookahead_length, decoded_prompt):
+    def get_lookahead_score(self, token_ids, lookahead_length, decoded_prompt):
         batch_size = token_ids.shape[0]
         beam_size = self.beam_size
 
@@ -402,84 +373,6 @@ class Generator:
         max_lengths, _ = actual_lookahead_length.max(dim=1)
 
         return max_scores, max_lengths
-
-    def get_lookahead_score_DynL(self, token_ids, lookahead_length, decoded_prompt):
-        beam_size = self.beam_size
-        actual_lookahead_length = 0
-
-        token_ids = token_ids.repeat(beam_size, 1)  # [beam_size, seq_len]
-        attention_mask = torch.ones_like(token_ids).to(self.model.device)
-
-        lookahead_scores = torch.zeros(beam_size, dtype=torch.float).to(self.model.device)
-        beam_indices = torch.zeros(beam_size, dtype=torch.long, device=token_ids.device)
-
-        is_finished = [False] * beam_size
-
-        with torch.no_grad():
-            for _ in range(lookahead_length):
-                if all(is_finished):
-                    break
-
-                outputs = self.model(input_ids=token_ids, attention_mask=attention_mask)
-                next_token_logits = outputs.logits[:, -1, :]  # [beam_size, vocab_size]
-
-                topk_k_scores = []
-                topk_k_indices = []
-
-                for i in range(self.beam_size):
-                    curr_topk_scores, curr_topk_indices = self.scoring_function(
-                        next_token_logits[i:i + 1],
-                        lookahead_scores[i:i + 1],
-                        beam_size=beam_size
-                    )
-                    topk_k_scores.append(curr_topk_scores)
-                    topk_k_indices.append(curr_topk_indices)
-
-                if not topk_k_scores:
-                    break
-
-                topk_scores, topk_indices, beam_indices = self.select_top_beam_scores(
-                    beam_size=beam_size,
-                    topk_scores=topk_k_scores,
-                    topk_indices=topk_k_indices,
-                    mode='AdaDynL'
-                )
-
-                actual_lookahead_length += 1
-                token_indices = topk_indices % next_token_logits.shape[-1]
-
-                beam_indices = beam_indices.to(token_ids.device)
-                token_ids = torch.cat([token_ids[beam_indices], token_indices.unsqueeze(-1)], dim=-1)
-                lookahead_scores = topk_scores
-
-                for j in range(beam_size):
-                    if token_indices[j] == self.tokenizer.eos_token_id:
-                        is_finished[j] = True
-                        continue
-
-                    decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
-                    current_sequence = decoded_seq[len(decoded_prompt):]
-                    lines = current_sequence.split('\n')
-
-                    is_consecutive_empty = (
-                        len(lines) >= 4 and
-                        all(line.strip() == '' for line in lines[-4:])
-                    )
-
-                    all_lines_valid = all(
-                        not line or line.startswith((' ', '\t'))
-                        for line in lines
-                    )
-                    
-                    ends_with_newline = current_sequence.endswith('\n')
-
-                    is_finished[j] = (not all_lines_valid) or is_consecutive_empty or ends_with_newline
-
-                attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
-                
-        self.logging_gen += f"actual_lookahead_length:{actual_lookahead_length}\n"
-
-        return lookahead_scores.max().item(), actual_lookahead_length
 
     def generate_base_on_ground_truth(
             self,

@@ -1,5 +1,4 @@
 # AdaDec
-<!-- ASE 2025 Submission -->
 
 ## Environment Setup
 
@@ -37,52 +36,36 @@ Learned thresholds are saved to:
 python src/eval/evaluate.py --model <model_name> --dataset <dataset_name>
 ```
 
-#### Beam Search (beam size = 3):
-
-```bash
-python src/eval/evaluate.py --model <model_name> --beam 3 --dataset <dataset_name>
-```
-
-#### AdaFixL Decoding (lookahead length = 5):
+#### AdaDec Decoding:
 
 ```bash
 python src/eval/evaluate.py --model <model_name> --decoding_mode AdaFixL --dataset <dataset_name>
 ```
 
-#### AdaDynL Decoding(max lookahead length = 10):
+#### AdapT Decoding:
 
-```bash
-python src/eval/evaluate.py --model <model_name> --decoding_mode AdaDynL --lookahead_length 10 --dataset <dataset_name>
-```
+To run AdapT, please refer to the official implementation available at:  
+[AdapT](https://github.com/LJ2lijia/AdapT)
 
-#### Example Commands
+After installing the AdapT repository, you can run evaluation with commands provided in their repo.
 
-* Evaluate `deepseek-1.3b` on `humaneval` using AdaFixL:
+#### DevEval Evaluation:
 
-  ```bash
-  python src/eval/evaluate.py --model deepseek-1.3b --decoding_mode AdaFixL --dataset humaneval
-  ```
-
-* Evaluate `qwen3-1.7b` on `mbpp` using Beam Search:
-
-  ```bash
-  python src/eval/evaluate.py --model qwen3-1.7b --beam 3 --dataset mbpp
-  ```
+To run evaluation on the DevEval benchmark, please use the official implementation provided by the DevEval authors:  
+[DevEval](https://github.com/seketeam/DevEval)
 
 #### Arguments for `evaluate.py`
 
 | Argument                | Description                                                                                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--model`               | Model name. Options: `deepseek-1.3b`, `deepseek-6.7b`, `stable-3b`, `codellama-7b`, `qwen3-0.6b`, `qwen3-1.7b`, `qwen3-4b`, `qwen3-8b`.                      |
-| `--dataset`             | Dataset to evaluate on. Options: `humaneval`, `mbpp`.                                                                                                        |
-| `--beam`                | Beam size. Use `1` for greedy decoding; values >1 for beam search. Default: `1`.                                                                             |
-| `--decoding_mode`       | Decoding strategy. Options: `Traditional`, `AdaFixL`, `AdaDynL`.                                                                                             |
-| `--entropy_threshold`   | Entropy threshold. Options: `'Learned'` or a numeric value (e.g., `0.8`). Default: `Learned`.                                                                |
+| `--model`               | Model name. Options: `deepseek-1.3b`, `deepseek-6.7b`, `stable-3b`, `qwen3-0.6b`, `qwen3-1.7b`, `qwen3-4b`, `qwen3-8b`.                      |
+| `--dataset`             | Dataset to evaluate on. Options: `humaneval+`, `mbpp+`, `deveval`.                                                                                                        |
+| `--decoding_mode`       | Decoding strategy. Options: `Traditional`, `AdaFixL`.                                                                                             |
+| `--entropy_threshold`   | Entropy threshold. Options: `'Learned'` or a numeric value (e.g., `1.2`). Default: `Learned`.                                                                |
 | `--max_new_tokens`      | Maximum number of new tokens to generate. Default: `512`.                                                                                                    |
-| `--lookahead_length`    | For `AdaFixL`: fixed lookahead length; for `AdaDynL`: maximum lookahead length. Default: `5`.                                                                |
-| `--lookahead_beam_size` | Lookahead beam size. Default: `3`.                                                                                                                           |
+| `--lookahead_length`    | Maximum lookahead length(L). Default: `5`.                                                                |
+| `--lookahead_beam_size` | Lookahead beam size(B). Default: `3`.                                                                                                                           |
 | `--logging_detail`      | If enabled, logs detailed information for each decoding step (e.g., entropy, score, whether lookahead is used, the actual lookahead length). Note: log files may be large. |
-| `--dirname`             | Custom sub-directory name under `experiments/<dataset>_outputs/<model_name>/` to store result files.  Default: `new`.                                                             |
 
 ## Result Archive
 

@@ -79,7 +79,6 @@ def evaluate_model(model, X_test, y_test, model_name):
     print(f"\nBest threshold (to maximize Accuracy): {best_threshold:.2f}")
     print(f"Accuracy at best threshold: {best_accuracy:.4f}")
 
-    # ===== Output complete evaluation results at the best threshold =====
     y_pred_best = (y_pred_proba >= best_threshold).astype(int)
     precision_best = precision_score(y_test, y_pred_best)
     recall_best = recall_score(y_test, y_pred_best)
@@ -103,7 +102,6 @@ def evaluate_model(model, X_test, y_test, model_name):
         entropy_at_prob = (z_at_prob - intercept) / coef_entropy
         print(f"\nLearned Entropy Threshold: {entropy_at_prob:.6f}")
         
-        # ===== Save learned entropy threshold =====
         entropy_file = 'data/learned_thresholds.json'
 
         if os.path.exists(entropy_file):

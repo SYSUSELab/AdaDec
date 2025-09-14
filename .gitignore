@@ -1,9 +1,2 @@
 __pycache__/
-# deveval_outputs/
-# deveval_outputs_100/
-# humaneval+_outputs/
-# mbpp+_outputs/
-# old_deveval_outputs/
 experiments/
-deveval_script/
-huggingface/

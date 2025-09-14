@@ -4,10 +4,6 @@ from typing import Optional, Tuple
 import re
 
 class AlphaRenamer(ast.NodeTransformer):
-    """
-    Uniformly rename all identifiers to v0, v1, ...
-    Remove docstrings (from Module, FunctionDef, ClassDef)
-    """
     def __init__(self):
         super().__init__()
         self.counter = itertools.count()
@@ -62,9 +58,6 @@ class AlphaRenamer(ast.NodeTransformer):
         return None
 
 def normalize(code: str) -> ast.AST:
-    """
-    Parse and normalize: remove comments, docstrings, and uniformly rename all identifiers.
-    """
     tree = ast.parse(code)
     if (tree.body and isinstance(tree.body[0], ast.Expr) and
         isinstance(tree.body[0].value, ast.Constant) and
@@ -75,9 +68,6 @@ def normalize(code: str) -> ast.AST:
 
 def find_divergence(tree1: ast.AST, tree2: ast.AST
                    ) -> Optional[Tuple[int, int]]:
-    """
-    Traverse two ASTs in parallel and return the (lineno_in_tree1, lineno_in_tree2) of the first divergent node.
-    """
     for node1, node2 in zip(ast.walk(tree1), ast.walk(tree2)):
         if type(node1) is not type(node2):
             return (getattr(node1, 'lineno', None),
@@ -99,25 +89,16 @@ def find_divergence(tree1: ast.AST, tree2: ast.AST
     return None
 
 def normalize_line_for_comparison(line: str) -> str:
-    """
-    Normalize a line by removing variable names and other irrelevant differences.
-    """
-    # Remove leading/trailing whitespace but preserve structure
     stripped = line.strip()
     if not stripped:
         return ""
     
-    # Replace identifiers with placeholders to ignore variable name differences
-    # This is a simplified approach - could be enhanced with AST parsing for better accuracy
     import re
     
-    # Replace string literals with placeholder
     normalized = re.sub(r'["\'].*?["\']', 'STR', stripped)
     
-    # Replace numbers with placeholder
     normalized = re.sub(r'\b\d+\.?\d*\b', 'NUM', normalized)
     
-    # Replace identifiers (variable names) with placeholder, but keep keywords
     keywords = {
         'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 
         'finally', 'with', 'return', 'yield', 'import', 'from', 'as', 'pass',
@@ -137,41 +118,27 @@ def normalize_line_for_comparison(line: str) -> str:
     return ''.join(normalized_tokens)
 
 def get_common_indent(line1: str, line2: str) -> int:
-    """
-    Get the common indentation level of two lines.
-    """
     indent1 = len(line1) - len(line1.lstrip())
     indent2 = len(line2) - len(line2.lstrip())
     return min(indent1, indent2)
 
 def is_divergence_at_line_start(lineA: str, lineB: str) -> bool:
-    """
-    Check if the divergence occurs at the beginning of the line by:
-    1. Removing common indentation
-    2. Normalizing variable names and literals
-    3. Comparing the semantic structure
-    """
     if lineA == "<Out of bounds>" or lineB == "<Out of bounds>":
         return False
     
-    # Get common indentation and remove it
     common_indent = get_common_indent(lineA, lineB)
     lineA_dedented = lineA[common_indent:] if common_indent < len(lineA) else lineA.lstrip()
     lineB_dedented = lineB[common_indent:] if common_indent < len(lineB) else lineB.lstrip()
     
-    # Check if one line starts with whitespace and the other doesn't (indentation difference)
     lineA_first_char = lineA_dedented[0] if lineA_dedented else ''
     lineB_first_char = lineB_dedented[0] if lineB_dedented else ''
     
     lineA_starts_with_space = lineA_first_char in [' ', '\t']
     lineB_starts_with_space = lineB_first_char in [' ', '\t']
     
-    # If one starts with indentation and other doesn't, it's a line start divergence
     if lineA_starts_with_space != lineB_starts_with_space:
         return True
     
-    # If both are indented or both are not indented, check semantic difference
-    # Get the first word/token of each line
     import re
     
     lineA_tokens = re.findall(r'\S+', lineA_dedented)
@@ -180,30 +147,22 @@ def is_divergence_at_line_start(lineA: str, lineB: str) -> bool:
     if not lineA_tokens or not lineB_tokens:
         return lineA_dedented.strip() != lineB_dedented.strip()
     
-    # Normalize both lines and compare
     normalized_A = normalize_line_for_comparison(lineA_dedented)
     normalized_B = normalize_line_for_comparison(lineB_dedented)
     
-    # If normalized versions are different, check if it's a structural difference
-    # (like different keywords/operators) vs just variable name differences
     if normalized_A != normalized_B:
-        # Get first tokens
         first_token_A = lineA_tokens[0]
         first_token_B = lineB_tokens[0]
         
-        # Keywords and operators that indicate structural differences
         structural_tokens = {
             'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'try', 'except',
             'finally', 'with', 'return', 'yield', 'import', 'from', 'pass',
             'break', 'continue', 'assert', 'del', 'raise', '=', '+=', '-=', '*=', '/='
         }
         
-        # If first tokens are both structural and different, it's a line start divergence
         if (first_token_A in structural_tokens or first_token_B in structural_tokens):
             return first_token_A != first_token_B
         
-        # Otherwise, it might just be variable name differences
-        # Check if the overall structure is the same
         return normalized_A != normalized_B
     
     return False
@@ -212,7 +171,6 @@ def extract_all_code_pairs_with_filter(logfile: str):
     with open(logfile, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
-    # Extract failed task IDs
     failed_ids = set()
     for line in reversed(lines[-20:]):
         if "failed task ids" in line:
@@ -291,7 +249,6 @@ if __name__ == "__main__":
 
     output_path = "data/divergence_report.txt"
     
-    # Statistics for divergence at line start
     total_divergences = 0
     divergences_at_line_start = 0
 
@@ -331,7 +288,6 @@ if __name__ == "__main__":
             except Exception as e:
                 fout.write("Analysis failed, error message: {}\n".format(str(e)))
 
-        # Write summary statistics
         fout.write(f"\n\n=== SUMMARY ===\n")
         fout.write(f"Total divergences analyzed: {total_divergences}\n")
         fout.write(f"Divergences at line start: {divergences_at_line_start}\n")
@@ -342,7 +298,6 @@ if __name__ == "__main__":
         else:
             fout.write("No divergences found to calculate percentage\n")
 
-    # Also print summary to console
     print(f"\nSUMMARY:")
     print(f"Total divergences analyzed: {total_divergences}")
     print(f"Divergences at line start: {divergences_at_line_start}")

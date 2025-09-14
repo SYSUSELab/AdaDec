@@ -1,7 +1,0 @@
-              Method  DS-1.3B  DS-6.7B  ST-3B  CL-7B  QW-0.6B  QW-1.7B  QW-4B  QW-8B   Mean
-HumanEval  \appFiveL     6.54     5.53   4.76   3.95     6.10    11.07   7.95   5.98  6.485
-MBPP       \appFiveL     8.32     5.82   6.35   5.20     6.33    11.41  10.64   8.41  7.810
-HumanEval   \appDynL     6.69     5.60   4.72   3.95     5.18    10.06   9.37   6.39  6.495
-MBPP        \appDynL     8.28     5.89   6.51   5.45     6.21    11.88  10.18   7.96  7.795
-
-Overall Mean: 7.15%

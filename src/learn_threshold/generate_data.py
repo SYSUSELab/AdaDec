@@ -48,7 +48,6 @@ if __name__ == "__main__":
     samples = []
     for task_id, problem in tqdm(problems, ascii=True):
         prompt = problem["complete_prompt"]
-        # disable the thinking mode for qwen3 series
         if args.model.startswith('qwen3-'):
             prompt = '/no_think\n' + prompt
         generator.generate_base_on_ground_truth(prompt=prompt,

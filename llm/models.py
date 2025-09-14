@@ -3,13 +3,6 @@ from transformers import AutoModelForCausalLM, LlamaForCausalLM
 from transformers import AutoTokenizer
 
 
-def init_codellama7b(model_path="codellama/CodeLlama-7b-Python-hf", device="cuda"):
-    model = LlamaForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)
-    model.to(device)
-    model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side = "left")
-    tokenizer.pad_token_id = tokenizer.eos_token_id
-    return model, tokenizer
 
 def init_deepseek1b(model_path="deepseek-ai/deepseek-coder-1.3b-instruct", device="cuda"):
     model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
@@ -68,7 +61,6 @@ def init_qwen3_8b(model_path="Qwen/Qwen3-8B", device="cuda"):
     return model, tokenizer
 
 MODEL_FACTORY = {
-    "codellama-7b": init_codellama7b,
     "deepseek-1.3b": init_deepseek1b,
     "deepseek-6.7b": init_deepseek7b,
     "stable-3b": init_stable3b,
