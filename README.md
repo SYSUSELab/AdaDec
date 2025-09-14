@@ -28,7 +28,7 @@ python src/learn_threshold/logistic_regression.py --model <model_name>
 Learned thresholds are saved to:
 `data/learned_thresholds.json`
 
-### 3. Evaluate Model
+### 3. Generation and Evaluation:
 
 #### Greedy Decoding:
 
