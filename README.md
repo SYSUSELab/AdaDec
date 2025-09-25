@@ -4,7 +4,6 @@ AdaDec is an adaptive decoding framework for LLM code generation.
 It selectively pauses decoding when uncertainty is high, reranks candidates, 
 and improves accuracy with moderate overhead.
 
----
 
 ## Installation
 
@@ -12,7 +11,6 @@ and improves accuracy with moderate overhead.
 pip install adadec
 ````
 
----
 
 ## Quick Start
 
@@ -32,13 +30,11 @@ stop_words.json example:
 ]
 ```
 
----
 
 ## 📖 License
 
 MIT License
 
----
 
 ## Links
 * [Source Code](https://github.com/SYSUSELab/AdaDec)
