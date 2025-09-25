@@ -151,8 +151,8 @@ def prepare_adadec(model: Union[str, object],
         iterator = items
 
     for task_id, problem in iterator:
-        prompt = problem.get("complete_prompt") or problem.get("prompt") or problem.get("input", "")
-        ground_truth = problem.get("canonical_solution") or problem.get("reference") or problem.get("output", "")
+        prompt = problem.get("prompt")
+        ground_truth = problem.get("canonical_solution")
         try:
             generator.generate_base_on_ground_truth(prompt=prompt,
                                                    ground_truth=ground_truth,

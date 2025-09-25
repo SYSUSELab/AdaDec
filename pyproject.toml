@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adadec"                # 你包的名字（在 PyPI 上唯一）
+version = "0.1.0"             # 版本号
+description = "AdaDec is an uncertainty-guided adaptive decoding framework for large language model (LLM) code generation which enhances standard decoding with a selective pause-then-rerank mechanism triggered by model uncertainty."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+  { name="Arw-Wow", email="hekaifeng70@gmail.com" }
+]
+requires-python = ">=3.9.18"
+dependencies = ["scikit-learn", "pytorch", "pandas", "transformers", "numpy"]
+
+[project.urls]
+"Homepage" = "https://github.com/SYSUSELab/AdaDec"
