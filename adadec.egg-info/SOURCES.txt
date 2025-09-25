@@ -1,0 +1,12 @@
+LICENSE
+README.md
+pyproject.toml
+adadec/__init__.py
+adadec/generate_adadec.py
+adadec/generator.py
+adadec/prepare_adadec.py
+adadec.egg-info/PKG-INFO
+adadec.egg-info/SOURCES.txt
+adadec.egg-info/dependency_links.txt
+adadec.egg-info/requires.txt
+adadec.egg-info/top_level.txt
