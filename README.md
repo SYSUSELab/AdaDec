@@ -24,10 +24,7 @@ Note that train.jsonl requires "task_id", "prompt", and "canonical_solution".
 
 stop_words.json example:
 ```json
-[
-  "\\n{4,}",
-  "^\\S"
-]
+["\\n{4,}", "^\\S"]
 ```
 
 
