@@ -33,13 +33,13 @@ Learned thresholds are saved to:
 #### Greedy Decoding:
 
 ```bash
-python src/eval/evaluate.py --model <model_name> --dataset <dataset_name>
+python src/evaluate.py --model <model_name> --dataset <dataset_name>
 ```
 
 #### AdaDec Decoding:
 
 ```bash
-python src/eval/evaluate.py --model <model_name> --decoding_mode AdaFixL --dataset <dataset_name>
+python src/evaluate.py --model <model_name> --decoding_mode AdaFixL --dataset <dataset_name>
 ```
 
 #### AdapT Decoding:
