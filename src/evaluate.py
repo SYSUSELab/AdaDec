@@ -286,7 +286,7 @@ def extract_last_function_body(code_str: str) -> str:
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--model', help='model name', required=True, type=str)
-# parser.add_argument('--beam', help='beam size', required=False, type=int, default=1)
+parser.add_argument('--beam', help='beam size', required=False, type=int, default=1)
 parser.add_argument('--decoding_mode', help='decoding mode, Traditional or AdaFixL', required=False, type=str, default='Traditional')
 parser.add_argument('--entropy_threshold', help='entropy threshold, Learned or a number', required=False, type=str, default='Learned')
 
