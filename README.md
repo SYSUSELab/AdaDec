@@ -9,7 +9,7 @@ conda env create -f env.yml
 conda activate adadec
 ```
 
-## Quick Reproduction (Pass@1)
+## Quick Reproduction
 
 To directly reproduce the pass@1 results from our paper without re-running the full pipeline, unpack the provided data and run the evaluation script:
 
