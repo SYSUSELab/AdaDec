@@ -1,11 +1,11 @@
 import torch
-from transformers import AutoModelForCausalLM, LlamaForCausalLM
-from transformers import AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
+DTYPE = torch.bfloat16
+# DTYPE = torch.float16
 
 def init_deepseek1b(model_path="deepseek-ai/deepseek-coder-1.3b-instruct", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, padding_side='left')
@@ -13,7 +13,7 @@ def init_deepseek1b(model_path="deepseek-ai/deepseek-coder-1.3b-instruct", devic
     return model, tokenizer
 
 def init_deepseek7b(model_path="deepseek-ai/deepseek-coder-6.7b-instruct", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, padding_side='left')
@@ -21,7 +21,7 @@ def init_deepseek7b(model_path="deepseek-ai/deepseek-coder-6.7b-instruct", devic
     return model, tokenizer
 
 def init_stable3b(model_path="stabilityai/stable-code-instruct-3b", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -29,7 +29,7 @@ def init_stable3b(model_path="stabilityai/stable-code-instruct-3b", device="cuda
     return model, tokenizer
 
 def init_qwen3_600m(model_path="Qwen/Qwen3-0.6B", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -37,7 +37,7 @@ def init_qwen3_600m(model_path="Qwen/Qwen3-0.6B", device="cuda"):
     return model, tokenizer
 
 def init_qwen3_2b(model_path="Qwen/Qwen3-1.7B", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -45,7 +45,7 @@ def init_qwen3_2b(model_path="Qwen/Qwen3-1.7B", device="cuda"):
     return model, tokenizer
 
 def init_qwen3_4b(model_path="Qwen/Qwen3-4B", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -53,7 +53,23 @@ def init_qwen3_4b(model_path="Qwen/Qwen3-4B", device="cuda"):
     return model, tokenizer
 
 def init_qwen3_8b(model_path="Qwen/Qwen3-8B", device="cuda"):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
+    model.to(device)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    return model, tokenizer
+
+def init_qwen2_1b(model_path="Qwen/Qwen2.5-Coder-1.5B-Instruct", device="cuda"):
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
+    model.to(device)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    return model, tokenizer
+
+def init_qwen2_7b(model_path="Qwen/Qwen2.5-Coder-7B-Instruct", device="cuda"):
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype=DTYPE)
     model.to(device)
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -68,4 +84,6 @@ MODEL_FACTORY = {
     "qwen3-1.7b": init_qwen3_2b,
     "qwen3-4b": init_qwen3_4b,
     "qwen3-8b": init_qwen3_8b,
+    "qwen2.5-1.5b": init_qwen2_1b,
+    "qwen2.5-7b": init_qwen2_7b,
 }

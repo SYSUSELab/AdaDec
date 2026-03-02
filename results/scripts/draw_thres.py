@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 
 model_list = {'deepseek-1.3b': 'DS-1.3B', 'deepseek-6.7b': 'DS-6.7B', 
               'stable-3b': 'ST-3B',
-              'qwen3-0.6b': 'QW-0.6B', 'qwen3-1.7b': 'QW-1.7B', 'qwen3-4b': 'QW-4B', 'qwen3-8b': 'QW-8B'}
+              'qwen2.5-1.5b': 'QW2.5-1.5B', 'qwen2.5-7b': 'QW2.5-7B',
+              'qwen3-0.6b': 'QW3-0.6B', 'qwen3-1.7b': 'QW3-1.7B', 'qwen3-4b': 'QW3-4B', 'qwen3-8b': 'QW3-8B'}
 
 thresholds = np.arange(0.6, 1.6, 0.1)
 
@@ -69,7 +70,7 @@ for i, (model, MD) in enumerate(model_list.items()):
 
 plt.xlabel('Entropy Threshold', fontsize=22)
 plt.ylabel('Average Rank of Ground-truth Tokens', fontsize=22)
-plt.legend(loc='upper left', fontsize=16, ncol=2, frameon=False)
+plt.legend(loc='upper left', fontsize=14, ncol=2, frameon=False)
 plt.xticks(fontsize=20)
 plt.yticks(fontsize=20)
 plt.grid(True, linestyle='--', alpha=0.6)

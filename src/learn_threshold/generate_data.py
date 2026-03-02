@@ -40,7 +40,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     filename = f"data/gt_guide_data/{args.model}_statistics.parquet"
 
-    problems = [(task_id, problem) for task_id, problem in read_problems_bigcodebench(filename='data/BigCodeBench-v0.1.1.jsonl').items()]
+    problems = [(task_id, problem) for task_id, problem in read_problems_bigcodebench(filename=f'data/BigCodeBench-v0.1.1.jsonl').items()]
     print(f"Read {len(problems)} problems.")
 
     model, tokenizer = MODEL_FACTORY[args.model]()

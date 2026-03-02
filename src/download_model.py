@@ -28,7 +28,10 @@ if __name__ == "__main__":
         "Qwen/Qwen3-0.6B",
         "Qwen/Qwen3-1.7B",
         "Qwen/Qwen3-4B",
-        "Qwen/Qwen3-8B"
+        "Qwen/Qwen3-8B",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+        "Qwen/Qwen2.5-Coder-3B-Instruct",
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
     ]
 
     for model_path in models:

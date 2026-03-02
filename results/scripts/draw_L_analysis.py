@@ -15,10 +15,11 @@ import os
 
 # data
 L = np.array([2, 3, 4, 5, 6, 7, 8, 9])
-pass1 = np.array([54.27, 56.10, 56.71, 57.32, 54.27, 55.49, 55.49, 55.49])
-baseline = 51.83
+pass1 = np.array([62.80, 63.41, 64.63, 65.24, 64.63, 63.41, 64.63, 64.02])
+baseline = 62.20
 
-y_err = np.full_like(pass1, 0.30)
+# y_err = np.full_like(pass1, 0.30)
+y_err = None
 
 preferred_font = "DejaVu Sans"
 available = [f.name for f in font_manager.fontManager.ttflist]
@@ -67,8 +68,8 @@ ax.set_yticklabels(ax.get_yticks(), fontsize=tick_label_fs, fontweight='medium')
 ax.yaxis.grid(True, linestyle='--', linewidth=0.6, alpha=0.6)
 ax.xaxis.grid(False)
 
-y_min = min(pass1.min(), baseline) - 3.0
-y_max = max(pass1.max(), baseline) + 2.0
+y_min = min(pass1.min(), baseline) - 1.3
+y_max = max(pass1.max(), baseline) + 1
 ax.set_ylim(y_min, y_max)
 
 max_idx = np.argmax(pass1)

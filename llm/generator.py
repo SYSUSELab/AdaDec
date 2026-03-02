@@ -5,8 +5,6 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 import os
 import json
 
-
-
 class Generator:
     def __init__(
             self,
@@ -41,7 +39,6 @@ class Generator:
                     raise ValueError("Entropy threshold must be a number or 'Learned'")
         else:
             raise ValueError(f"Unsupported decoding_mode: expected 'AdaFixL' , got '{self.decoding_mode}'")
-
 
     def _load_learned_threshold(self, threshold_file) -> float:
         if not os.path.exists(threshold_file):
@@ -126,11 +123,66 @@ class Generator:
 
         return topk_scores, topk_indices
     
+    def _apply_chat_template(self, prompt: str) -> str:
+        if self.tokenizer.chat_template is None:
+            return prompt
+        
+        instruction_prefix = "Please provide a self-contained Python script that solves the following problem in a markdown code block:"
+        response_prefix = "Below is a Python script with a self-contained function that solves the problem and passes corresponding tests:"
+        
+        wrapped_prompt = f"{instruction_prefix}\n```\n{prompt.strip()}\n```\n"
+        
+        _MAGIC_SPLITTER_ = "-[[]]-SPLITTER-[[]]-"
+        response_trigger = f"{response_prefix}\n```python\n{_MAGIC_SPLITTER_}\n```"
+
+        messages = [
+            {"role": "user", "content": wrapped_prompt},
+            {"role": "assistant", "content": response_trigger},
+        ]
+        
+        try:
+            full_prompt = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+            )
+            if _MAGIC_SPLITTER_ in full_prompt:
+                return full_prompt.split(_MAGIC_SPLITTER_)[0]
+            else:
+                return full_prompt
+        except Exception:
+            return prompt
+
+    def _get_stop_strings(self) -> list[str]:
+        stop_strings = [
+            "<|endoftext|>",
+            "<|endofmask|>",
+            "</s>",
+            "\nif __name__",
+            "\ndef main(",
+            "\nprint(",
+            "\nassert ",
+        ]
+
+        is_chat = self.tokenizer.chat_template is not None
+
+        if is_chat:
+            stop_strings.append("\n```\n")
+            stop_strings.append("\n```") 
+        else:
+            stop_strings.extend([
+                "\ndef ", 
+                "\nclass ", 
+                "\nimport ", 
+                "\nfrom ", 
+            ])
+        
+        return stop_strings
+
     def generate(
             self,
             prompt,
             beam_size=1,
-            max_new_tokens=512,
+            max_new_tokens=1024, 
             lambda_value=1,
             lookahead_length=5,
             lookahead_beam_size=3,
@@ -139,14 +191,18 @@ class Generator:
         self.beam_size = beam_size
         self.lookahead_beam_size = lookahead_beam_size
 
-        token_ids = self.tokenizer([prompt], add_special_tokens=True, padding=True, truncation=True,
+        prompt_text = self._apply_chat_template(prompt)
+
+        token_ids = self.tokenizer([prompt_text], add_special_tokens=True, padding=True, truncation=True,
                                    return_tensors="pt").input_ids
         token_ids = token_ids.to(self.model.device)
         
         decoded_prompt = self.tokenizer.decode(
-            self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device),
+            token_ids[0],
             skip_special_tokens=True
         )
+
+        input_token_len = token_ids.shape[1]
 
         token_ids = token_ids.repeat(beam_size, 1)  # [beam_size, seq_len]
         attention_mask = torch.ones_like(token_ids).to(self.model.device)
@@ -156,6 +212,9 @@ class Generator:
         is_finished = [False] * beam_size
 
         beam_indices = torch.zeros(beam_size, dtype=torch.long, device=self.model.device)
+
+        # [New] Get stop strings for early stopping
+        stop_strings = self._get_stop_strings()
 
         with torch.no_grad():
             for step in range(max_new_tokens):
@@ -167,14 +226,6 @@ class Generator:
 
                 outputs = self.model(input_ids=token_ids, attention_mask=attention_mask)
                 next_token_logits = outputs.logits[:, -1, :]  # [beam_size, vocab_size]
-                
-                # Record the top 3 tokens in each beam
-                # top3_scores, top3_indices = torch.topk(next_token_logits, k=3, dim=-1)
-                # decoded_top3 = [
-                #     [self.tokenizer.decode([idx.item()], skip_special_tokens=True) for idx in beam_idxs]
-                #     for beam_idxs in top3_indices
-                # ]
-                # self.logging_gen += f"Top3 tokens: {decoded_top3}\n"
 
                 topk_k_scores = []
                 topk_k_indices = []
@@ -184,6 +235,7 @@ class Generator:
 
                 for i in range(self.beam_size):
                     if entropy[i] < self.entropy_threshold or is_finished[i]:
+                        # Traditional decoding
                         self.logging_gen += f"scoring function: \n"
                         curr_topk_scores, curr_topk_indices = self.scoring_function(next_token_logits[i],
                                                                                     beam_scores[i],
@@ -192,6 +244,7 @@ class Generator:
                         topk_k_indices.append(curr_topk_indices)
                         self.tradition_times += 1
                     else:
+                        # AdaFixL Lookahead decoding
                         self.logging_gen += f"lookahead scoring function:  (lookahead_beam_size: {self.lookahead_beam_size})\n"
                         curr_topk_scores, curr_topk_indices = self.lookahead_scoring_function(
                             decoded_prompt,
@@ -200,6 +253,8 @@ class Generator:
                             beam_scores[i],
                             lookahead_length=lookahead_length,
                             lambda_value=lambda_value,
+                            stop_strings=stop_strings,
+                            input_token_len=input_token_len
                         )
                         topk_k_scores.append(curr_topk_scores)
                         topk_k_indices.append(curr_topk_indices)
@@ -235,20 +290,17 @@ class Generator:
                     if token_indices[j] == self.tokenizer.eos_token_id:
                         is_finished[j] = True
                         continue
-
-                    prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids[0].to(self.model.device)
-                    decoded_prompt = self.tokenizer.decode(prompt_ids, skip_special_tokens=True)
-                    decoded_seq = self.tokenizer.decode(token_ids[j], skip_special_tokens=True)
-                    current_sequence = decoded_seq[len(decoded_prompt):]
-                    lines = current_sequence.split('\n')
-
-                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
-
-                    is_endswith_Human = lines and lines[-1].strip().endswith('Human')
-
-                    all_lines_valid = all(line.startswith((' ', '\t')) for line in lines if line.strip())
-
-                    is_finished[j] = not all_lines_valid or is_consecutive_empty or is_endswith_Human
+                    
+                    if not is_finished[j]:
+                        current_gen_text = self.tokenizer.decode(
+                            token_ids[j, input_token_len:], 
+                            skip_special_tokens=True
+                        )
+                        
+                        for stop_str in stop_strings:
+                            if stop_str in current_gen_text:
+                                is_finished[j] = True
+                                break
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(self.model.device)
 
@@ -264,25 +316,23 @@ class Generator:
 
                     for count_gen in range(beam_size):
                         self.logging_gen += f'----------candidate:{count_gen}----------\n' + gen_list[count_gen][
-                                                                                            len(prompt):] + '\n\n'
+                                                                                              len(decoded_prompt):] + '\n\n'
 
                     logging.info(self.logging_gen)
 
                 torch.cuda.empty_cache()
 
-        decoded_sequences = [
-            self.tokenizer.decode(seq, skip_special_tokens=True)
-            for seq in token_ids
-        ]
+        new_tokens = token_ids[:, input_token_len:]
+        decoded_new_code = [self.tokenizer.decode(seq, skip_special_tokens=True) for seq in new_tokens]
         
         logging.info(f"Total tradition_times:{self.tradition_times}\n Total lookahead_times:{self.lookahead_times}\n")
 
         torch.cuda.empty_cache()
 
-        return [gen[len(prompt):] for gen in decoded_sequences]
+        return decoded_new_code
 
     def lookahead_scoring_function(self, decoded_prompt, next_token_logits, token_ids, beam_scores,
-                                lookahead_length, lambda_value):
+                                lookahead_length, lambda_value, stop_strings, input_token_len):
         lookahead_beam_size = self.lookahead_beam_size
         beam_size = self.beam_size
 
@@ -300,7 +350,9 @@ class Generator:
         lookahead_scores, actual_lengths = self.get_lookahead_score(
             token_ids=token_ids,
             lookahead_length=lookahead_length,
-            decoded_prompt=decoded_prompt
+            decoded_prompt=decoded_prompt,
+            stop_strings=stop_strings,
+            input_token_len=input_token_len
         )
         total_scores = history_topk_score + (current_topk_scores + lookahead_scores) / (actual_lengths + 1) * lambda_value
 
@@ -309,7 +361,7 @@ class Generator:
 
         return topk_scores, topk_indices
 
-    def get_lookahead_score(self, token_ids, lookahead_length, decoded_prompt):
+    def get_lookahead_score(self, token_ids, lookahead_length, decoded_prompt, stop_strings, input_token_len):
         batch_size = token_ids.shape[0]
         beam_size = self.beam_size
 
@@ -341,6 +393,7 @@ class Generator:
 
                 lookahead_scores = selected_scores
                 actual_lookahead_length += (~is_finished).long()
+                
                 next_tokens = selected_indices % next_token_logits.shape[-1]
 
                 token_ids = torch.cat([
@@ -353,16 +406,23 @@ class Generator:
                 else:
                     token_ids = token_ids.view(-1, token_ids.shape[-1])
 
-                decoded_seqs = self.tokenizer.batch_decode(token_ids.tolist(), skip_special_tokens=True)
-
                 for i in range(token_ids.size(0)):
                     if is_finished[i]:
                         continue
-                    current_seq = decoded_seqs[i][len(decoded_prompt):]
-                    lines = current_seq.split('\n')
-                    is_consecutive_empty = len(lines) >= 4 and all(line.strip() == '' for line in lines[-4:])
-                    all_lines_valid = all(not line or line.startswith((' ', '\t')) for line in lines)
-                    is_finished[i] = is_consecutive_empty or not all_lines_valid
+                    
+                    if next_tokens[i] == self.tokenizer.eos_token_id:
+                        is_finished[i] = True
+                        continue
+
+                    current_gen_text = self.tokenizer.decode(
+                        token_ids[i, input_token_len:], 
+                        skip_special_tokens=True
+                    )
+                    
+                    for stop_str in stop_strings:
+                        if stop_str in current_gen_text:
+                            is_finished[i] = True
+                            break
 
                 attention_mask = token_ids.ne(self.tokenizer.pad_token_id).to(device)
 
