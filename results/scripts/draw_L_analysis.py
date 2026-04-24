@@ -12,6 +12,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams, font_manager
 import os
+import matplotlib as mpl
+
+mpl.rcParams["pdf.fonttype"] = 42
+mpl.rcParams["ps.fonttype"] = 42
+mpl.rcParams["font.family"] = "DejaVu Sans"
 
 # data
 L = np.array([2, 3, 4, 5, 6, 7, 8, 9])

@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from matplotlib.patches import Rectangle
+import matplotlib as mpl
+
+mpl.rcParams["pdf.fonttype"] = 42
+mpl.rcParams["ps.fonttype"] = 42
+mpl.rcParams["font.family"] = "DejaVu Sans"
 
 plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
 plt.rcParams['font.size'] = 12

@@ -1,6 +1,11 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+mpl.rcParams["pdf.fonttype"] = 42
+mpl.rcParams["ps.fonttype"] = 42
+mpl.rcParams["font.family"] = "DejaVu Sans"
 
 model_list = {'deepseek-1.3b': 'DS-1.3B', 'deepseek-6.7b': 'DS-6.7B', 
               'stable-3b': 'ST-3B',
